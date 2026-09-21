@@ -20,6 +20,5 @@ for (const queueName of queues) {
     },
     { connection },
   );
-  // eslint-disable-next-line no-console
   console.log(`[worker] escutando fila: ${queueName}`);
 }

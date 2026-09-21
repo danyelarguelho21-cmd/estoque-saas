@@ -5,7 +5,7 @@ import type {
   PaymentWebhookEvent,
   RecurringChargeInput,
   RecurringChargeResult,
-} from "../provider.js";
+} from "../provider";
 
 // Implementação concreta do PaymentProvider para PagBank/PagSeguro (ADR-004).
 // Recorrência nativa: apenas cartão (API "Pagamentos Recorrentes").

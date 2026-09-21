@@ -1,3 +1,3 @@
-export * from "./db/client.js";
-export * from "./audit/index.js";
-export * from "./payments/provider.js";
+export * from "./db/client";
+export * from "./audit/index";
+export * from "./payments/provider";

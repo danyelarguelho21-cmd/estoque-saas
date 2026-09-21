@@ -57,7 +57,7 @@ services:
     build:
       context: .
       dockerfile: services/app/Dockerfile
-    command: ["node", "services/app/dist/worker/index.js"]
+    command: ["npm", "run", "worker", "--workspace", "services/app"]
     restart: unless-stopped
     env_file: .env
     environment:

@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 // Cliente Prisma com contexto de tenant via RLS (ADR-002).
 // withTenant() abre uma transação, seta app.tenant_id (escopo de transação via set_config(..., true)),
@@ -7,11 +7,13 @@ import { PrismaClient } from "@prisma/client";
 
 const basePrisma = new PrismaClient();
 
+export type TenantScopedClient = Prisma.TransactionClient;
+
 export async function withTenant<T>(
   tenantId: string,
-  fn: (tx: Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">) => Promise<T>,
+  fn: (tx: TenantScopedClient) => Promise<T>,
 ): Promise<T> {
-  return basePrisma.$transaction(async (tx) => {
+  return basePrisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
     return fn(tx);
   });
