@@ -1,0 +1,243 @@
+// Prisma schema — espelha schemas/migrations/0001_init.sql (fonte de verdade das políticas RLS).
+// Ver docs/architecture/architecture-decision-records/ADR-002-multi-tenancy-strategy.md.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Plan {
+  id           String         @id @default(uuid())
+  name         String
+  priceCents   Int            @map("price_cents")
+  maxProducts  Int            @map("max_products")
+  maxUsers     Int            @map("max_users")
+  maxStores    Int            @map("max_stores")
+  features     Json           @default("{}")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  tenants      Tenant[]
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model PlatformAdmin {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("platform_admins")
+}
+
+model Tenant {
+  id                         String   @id @default(uuid())
+  name                       String
+  cnpj                       String   @unique
+  planId                     String   @map("plan_id")
+  plan                       Plan     @relation(fields: [planId], references: [id])
+  consolidatedStock          Boolean  @default(false) @map("consolidated_stock")
+  perishableTrackingEnabled  Boolean  @default(false) @map("perishable_tracking_enabled")
+  status                     String   @default("active")
+  createdAt                  DateTime @default(now()) @map("created_at")
+
+  users         User[]
+  stores        Store[]
+  suppliers     Supplier[]
+  categories    Category[]
+  products      Product[]
+  customers     Customer[]
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  auditLogs     AuditLog[]
+  alertsConfig  StockAlertsConfig?
+
+  @@map("tenants")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  name         String
+  email        String
+  passwordHash String   @map("password_hash")
+  role         String
+  status       String   @default("active")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+model Store {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  type      String   @default("loja")
+  address   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("stores")
+}
+
+model Subscription {
+  id                     String    @id @default(uuid())
+  tenantId               String    @map("tenant_id")
+  tenant                 Tenant    @relation(fields: [tenantId], references: [id])
+  planId                 String    @map("plan_id")
+  plan                   Plan      @relation(fields: [planId], references: [id])
+  status                 String
+  paymentMethod          String    @map("payment_method")
+  gatewayCustomerId      String?   @map("gateway_customer_id")
+  gatewaySubscriptionId  String?   @map("gateway_subscription_id")
+  currentPeriodStart     DateTime? @map("current_period_start")
+  currentPeriodEnd       DateTime? @map("current_period_end")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  invoices               Invoice[]
+
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id               String       @id @default(uuid())
+  tenantId         String       @map("tenant_id")
+  tenant           Tenant       @relation(fields: [tenantId], references: [id])
+  subscriptionId   String       @map("subscription_id")
+  subscription     Subscription @relation(fields: [subscriptionId], references: [id])
+  amountCents      Int          @map("amount_cents")
+  status           String
+  dueDate          DateTime     @map("due_date") @db.Date
+  paidAt           DateTime?    @map("paid_at")
+  paymentMethod    String       @map("payment_method")
+  gatewayChargeId  String?      @map("gateway_charge_id")
+  gatewayEventId   String?      @unique @map("gateway_event_id")
+  pixQrCode        String?      @map("pix_qr_code")
+  boletoUrl        String?      @map("boleto_url")
+  createdAt        DateTime     @default(now()) @map("created_at")
+
+  @@map("invoices")
+}
+
+model Supplier {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  cnpj      String?
+  contact   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  products  Product[]
+
+  @@map("suppliers")
+}
+
+model Category {
+  id       String    @id @default(uuid())
+  tenantId String    @map("tenant_id")
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  name     String
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id               String    @id @default(uuid())
+  tenantId         String    @map("tenant_id")
+  tenant           Tenant    @relation(fields: [tenantId], references: [id])
+  sku              String
+  name             String
+  categoryId       String?   @map("category_id")
+  category         Category? @relation(fields: [categoryId], references: [id])
+  unitOfMeasure    String    @map("unit_of_measure")
+  barcode          String?
+  supplierId       String?   @map("supplier_id")
+  supplier         Supplier? @relation(fields: [supplierId], references: [id])
+  isPerishable     Boolean   @default(false) @map("is_perishable")
+  minStockGlobal   Int       @default(0) @map("min_stock_global")
+  costPriceCents   Int       @default(0) @map("cost_price_cents")
+  salePriceCents   Int       @default(0) @map("sale_price_cents")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  storeSettings ProductStoreSetting[]
+  batches       Batch[]
+
+  @@unique([tenantId, sku])
+  @@map("products")
+}
+
+model ProductStoreSetting {
+  productId        String  @map("product_id")
+  product          Product @relation(fields: [productId], references: [id])
+  storeId          String  @map("store_id")
+  minStockOverride Int?    @map("min_stock_override")
+
+  @@id([productId, storeId])
+  @@map("product_store_settings")
+}
+
+model Batch {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  productId    String   @map("product_id")
+  product      Product  @relation(fields: [productId], references: [id])
+  storeId      String   @map("store_id")
+  batchNumber  String   @map("batch_number")
+  expiryDate   DateTime @map("expiry_date") @db.Date
+  quantity     Int      @default(0)
+  receivedAt   DateTime @default(now()) @map("received_at")
+
+  @@map("batches")
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  document  String?
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("customers")
+}
+
+model StockAlertsConfig {
+  tenantId              String  @id @map("tenant_id")
+  tenant                Tenant  @relation(fields: [tenantId], references: [id])
+  lowStockAlertEnabled  Boolean @default(true) @map("low_stock_alert_enabled")
+  expiryAlertDays       Json    @default("[30,15,7]") @map("expiry_alert_days")
+
+  @@map("stock_alerts_config")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  userId     String?  @map("user_id")
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  action     String
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("audit_log")
+}
+
+// Modelos de estoque/vendas/nfe/transferências/notificações seguem o mesmo padrão
+// (tenant_id + @@map) já estabelecido acima — ver schemas/migrations/0001_init.sql
+// para a lista completa de colunas de stock_movements, nfe_imports, nfe_import_items,
+// sales, sale_items, transfers, transfer_items e notifications. Modelagem completa
+// desses models é concluída na fase BUILD (Software Engineer), a partir da mesma
+// fonte SQL, para não duplicar manutenção entre dois formatos durante a arquitetura.

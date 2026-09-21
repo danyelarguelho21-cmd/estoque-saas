@@ -1,0 +1,22 @@
+{
+  "name": "@estoque-saas/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "prisma:generate": "prisma generate --schema prisma/schema.prisma",
+    "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

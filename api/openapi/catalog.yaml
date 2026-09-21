@@ -1,0 +1,212 @@
+openapi: 3.1.0
+info:
+  title: estoque-saas — Catálogo (produtos, categorias, fornecedores)
+  version: "1.0.0"
+security: [{ sessionCookie: [] }]
+paths:
+  /api/products:
+    get:
+      summary: Lista produtos do tenant
+      operationId: listProducts
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/CursorParam"
+        - $ref: "_common.yaml#/components/parameters/LimitParam"
+        - name: search
+          in: query
+          schema: { type: string }
+          description: Busca por nome, SKU ou código de barras
+        - name: belowMinStock
+          in: query
+          schema: { type: boolean }
+          description: Filtra produtos abaixo do estoque mínimo (alerta)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Product" }
+                  page: { $ref: "_common.yaml#/components/schemas/PageInfo" }
+    post:
+      summary: Cadastra produto (valida limite do plano)
+      operationId: createProduct
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductInput" }
+      responses:
+        "201": { description: Criado }
+        "409": { $ref: "_common.yaml#/components/responses/PlanLimitReached" }
+  /api/products/import:
+    post:
+      summary: Importação em lote de produtos via CSV
+      operationId: importProductsCsv
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "202":
+          description: Job de importação enfileirado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  importJobId: { type: string, format: uuid }
+  /api/products/{productId}:
+    parameters:
+      - name: productId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Detalhe do produto
+      operationId: getProduct
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "404": { $ref: "_common.yaml#/components/responses/NotFound" }
+    patch:
+      summary: Atualiza produto
+      operationId: updateProduct
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductInput" }
+      responses:
+        "200": { description: Atualizado }
+    delete:
+      summary: Remove produto (soft delete — deleted_at)
+      operationId: deleteProduct
+      responses:
+        "204": { description: Removido }
+  /api/products/{productId}/store-settings/{storeId}:
+    parameters:
+      - name: productId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: storeId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      summary: Define estoque mínimo específico de uma loja para o produto
+      operationId: setProductStoreMinStock
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                minStockOverride: { type: integer, minimum: 0 }
+      responses:
+        "200": { description: Atualizado }
+  /api/categories:
+    get:
+      summary: Lista categorias
+      operationId: listCategories
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Category" }
+    post:
+      summary: Cria categoria
+      operationId: createCategory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        "201": { description: Criada }
+  /api/suppliers:
+    get:
+      summary: Lista fornecedores
+      operationId: listSuppliers
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/CursorParam"
+        - $ref: "_common.yaml#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Supplier" }
+                  page: { $ref: "_common.yaml#/components/schemas/PageInfo" }
+    post:
+      summary: Cadastra fornecedor
+      operationId: createSupplier
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SupplierInput" }
+      responses:
+        "201": { description: Criado }
+components:
+  securitySchemes:
+    sessionCookie:
+      $ref: "_common.yaml#/components/securitySchemes/sessionCookie"
+  schemas:
+    ProductInput:
+      type: object
+      required: [sku, name, unitOfMeasure]
+      properties:
+        sku: { type: string }
+        name: { type: string }
+        categoryId: { type: string, format: uuid }
+        unitOfMeasure: { type: string }
+        barcode: { type: string }
+        supplierId: { type: string, format: uuid }
+        isPerishable: { type: boolean, default: false }
+        minStockGlobal: { type: integer, minimum: 0, default: 0 }
+        costPriceCents: { type: integer, minimum: 0 }
+        salePriceCents: { type: integer, minimum: 0 }
+    Product:
+      allOf:
+        - $ref: "#/components/schemas/ProductInput"
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            currentStock: { type: integer, description: "Saldo agregado (todas as lojas ou por storeId, se filtrado)" }
+    Category:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+    SupplierInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        cnpj: { type: string }
+        contact: { type: string }
+    Supplier:
+      allOf:
+        - $ref: "#/components/schemas/SupplierInput"
+        - type: object
+          properties:
+            id: { type: string, format: uuid }

@@ -1,0 +1,166 @@
+openapi: 3.1.0
+info:
+  title: estoque-saas — Vendas e Clientes
+  version: "1.0.0"
+security: [{ sessionCookie: [] }]
+paths:
+  /api/sales:
+    get:
+      summary: Lista vendas (relatório de faturamento por período/loja)
+      operationId: listSales
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/CursorParam"
+        - $ref: "_common.yaml#/components/parameters/LimitParam"
+        - $ref: "_common.yaml#/components/parameters/StoreIdParam"
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Sale" }
+                  page: { $ref: "_common.yaml#/components/schemas/PageInfo" }
+                  totalAmountCents: { type: integer }
+    post:
+      summary: Registra venda (debita estoque automaticamente, respeitando FEFO quando aplicável)
+      operationId: createSale
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaleInput" }
+      responses:
+        "201": { description: Venda registrada }
+        "409":
+          description: Estoque insuficiente para algum item
+          content:
+            application/json:
+              schema: { $ref: "_common.yaml#/components/schemas/Error" }
+  /api/sales/{saleId}:
+    parameters:
+      - name: saleId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Detalhe da venda
+      operationId: getSale
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sale" }
+  /api/customers:
+    get:
+      summary: Lista clientes do tenant
+      operationId: listCustomers
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/CursorParam"
+        - $ref: "_common.yaml#/components/parameters/LimitParam"
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Customer" }
+                  page: { $ref: "_common.yaml#/components/schemas/PageInfo" }
+    post:
+      summary: Cadastra cliente
+      operationId: createCustomer
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomerInput" }
+      responses:
+        "201": { description: Criado }
+  /api/customers/{customerId}/history:
+    parameters:
+      - name: customerId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Histórico de compras do cliente
+      operationId: getCustomerHistory
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Sale" }
+components:
+  securitySchemes:
+    sessionCookie:
+      $ref: "_common.yaml#/components/securitySchemes/sessionCookie"
+  schemas:
+    SaleInput:
+      type: object
+      required: [storeId, items]
+      properties:
+        storeId: { type: string, format: uuid }
+        customerId: { type: string, format: uuid, nullable: true }
+        paymentMethodLabel: { type: string, description: "Informativo — não integra gateway do cliente final" }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [productId, quantity, unitPriceCents]
+            properties:
+              productId: { type: string, format: uuid }
+              batchId: { type: string, format: uuid, nullable: true, description: "Se omitido em produto perecível, aplica sugestão FEFO automaticamente" }
+              quantity: { type: integer, minimum: 1 }
+              unitPriceCents: { type: integer, minimum: 0 }
+    Sale:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        storeId: { type: string, format: uuid }
+        customerId: { type: string, format: uuid, nullable: true }
+        sellerId: { type: string, format: uuid }
+        totalAmountCents: { type: integer }
+        status: { type: string, enum: [completed, canceled] }
+        createdAt: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              productId: { type: string, format: uuid }
+              batchId: { type: string, format: uuid, nullable: true }
+              quantity: { type: integer }
+              unitPriceCents: { type: integer }
+    CustomerInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        document: { type: string }
+        phone: { type: string }
+        email: { type: string, format: email }
+    Customer:
+      allOf:
+        - $ref: "#/components/schemas/CustomerInput"
+        - type: object
+          properties:
+            id: { type: string, format: uuid }

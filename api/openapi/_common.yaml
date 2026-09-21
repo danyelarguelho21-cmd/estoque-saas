@@ -1,0 +1,102 @@
+openapi: 3.1.0
+info:
+  title: estoque-saas — Componentes comuns
+  version: "1.0.0"
+  description: >
+    Schemas e respostas reutilizados por todos os specs do domínio (auth, tenants, catalog,
+    stock, sales, dashboard, billing, admin). Não é servido isoladamente — referenciado via
+    $ref relativo pelos demais arquivos.
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-session
+      description: Sessão Auth.js (usuários de tenant — admin/operador/vendedor)
+    platformSessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-platform-session
+      description: Sessão separada do painel administrativo interno do SaaS (platform_admins)
+  parameters:
+    CursorParam:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Cursor opaco retornado por uma resposta paginada anterior
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    StoreIdParam:
+      name: storeId
+      in: query
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Filtra por loja/depósito; omitido = todas as lojas do tenant (se consolidated_stock)
+  schemas:
+    Error:
+      type: object
+      required: [code, message, trace_id]
+      properties:
+        code:
+          type: string
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          example: "O campo 'sku' é obrigatório."
+        details:
+          type: object
+          additionalProperties: true
+        trace_id:
+          type: string
+          format: uuid
+    PageInfo:
+      type: object
+      required: [next_cursor, has_more]
+      properties:
+        next_cursor:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+  responses:
+    BadRequest:
+      description: Requisição inválida
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Não autenticado
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Autenticado, mas sem permissão para esta ação (RBAC)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Recurso não encontrado (ou pertence a outro tenant — RLS nunca vaza 403 vs 404)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PlanLimitReached:
+      description: Limite do plano atingido (produtos/usuários/lojas)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

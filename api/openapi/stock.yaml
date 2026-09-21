@@ -1,0 +1,279 @@
+openapi: 3.1.0
+info:
+  title: estoque-saas — Estoque (entradas, saídas, transferências, NF-e, lotes)
+  version: "1.0.0"
+security: [{ sessionCookie: [] }]
+paths:
+  /api/stock/movements:
+    get:
+      summary: Histórico de movimentações (auditável)
+      operationId: listStockMovements
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/CursorParam"
+        - $ref: "_common.yaml#/components/parameters/LimitParam"
+        - $ref: "_common.yaml#/components/parameters/StoreIdParam"
+        - name: productId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [entrada_manual, entrada_nfe, saida_venda, saida_perda, transferencia_saida, transferencia_entrada, ajuste]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/StockMovement" }
+                  page: { $ref: "_common.yaml#/components/schemas/PageInfo" }
+  /api/stock/entries:
+    post:
+      summary: Entrada manual de estoque
+      operationId: createManualEntry
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ManualEntryInput" }
+      responses:
+        "201": { description: Entrada registrada }
+        "403": { $ref: "_common.yaml#/components/responses/Forbidden" }
+  /api/stock/exits:
+    post:
+      summary: Saída de estoque (perda/quebra/ajuste) — vendas usam /api/sales
+      operationId: createStockExit
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StockExitInput" }
+      responses:
+        "201": { description: Saída registrada }
+  /api/stock/fefo-suggestion:
+    get:
+      summary: Sugere lote(s) a sair primeiro (FEFO) para uma quantidade solicitada
+      operationId: getFefoSuggestion
+      parameters:
+        - name: productId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: storeId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: quantity
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Combinação de lotes sugerida (ordenada por vencimento)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        batchId: { type: string, format: uuid }
+                        expiryDate: { type: string, format: date }
+                        quantity: { type: integer }
+                  fullyCovered: { type: boolean }
+  /api/transfers:
+    post:
+      summary: Cria transferência entre lojas/depósitos do mesmo tenant
+      operationId: createTransfer
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransferInput" }
+      responses:
+        "201": { description: Transferência registrada (débito na origem + crédito no destino, atômico) }
+  /api/nfe-imports:
+    post:
+      summary: Upload de XML de NF-e do fornecedor (inicia parsing assíncrono)
+      operationId: uploadNfeImport
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, storeId]
+              properties:
+                file: { type: string, format: binary }
+                storeId: { type: string, format: uuid }
+      responses:
+        "202":
+          description: Import enfileirado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  importId: { type: string, format: uuid }
+  /api/nfe-imports/{importId}:
+    parameters:
+      - name: importId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Status e itens de um import de NF-e (usado para polling da UI)
+      operationId: getNfeImport
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeImport" }
+        "404": { $ref: "_common.yaml#/components/responses/NotFound" }
+  /api/nfe-imports/{importId}/confirm:
+    parameters:
+      - name: importId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Confirma a importação — só então grava movimentações de estoque (critério de aceite do BRD)
+      operationId: confirmNfeImport
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Permite informar validade/lote por item perecível antes de confirmar
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      nfeImportItemId: { type: string, format: uuid }
+                      batchNumber: { type: string }
+                      expiryDate: { type: string, format: date }
+      responses:
+        "200": { description: Importação confirmada, estoque atualizado }
+        "409":
+          description: Ainda há itens não mapeados a um produto (unmatched)
+          content:
+            application/json:
+              schema: { $ref: "_common.yaml#/components/schemas/Error" }
+  /api/alerts/low-stock:
+    get:
+      summary: Lista produtos abaixo do estoque mínimo
+      operationId: listLowStockAlerts
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/StoreIdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Product" }
+  /api/alerts/expiring-batches:
+    get:
+      summary: Lista lotes vencendo dentro da janela configurada, ordenados por proximidade
+      operationId: listExpiringBatches
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/StoreIdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Batch" }
+components:
+  securitySchemes:
+    sessionCookie:
+      $ref: "_common.yaml#/components/securitySchemes/sessionCookie"
+  schemas:
+    ManualEntryInput:
+      type: object
+      required: [productId, storeId, quantity]
+      properties:
+        productId: { type: string, format: uuid }
+        storeId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+        unitCostCents: { type: integer, minimum: 0 }
+        batchNumber: { type: string }
+        expiryDate: { type: string, format: date }
+    StockExitInput:
+      type: object
+      required: [productId, storeId, quantity, type, reason]
+      properties:
+        productId: { type: string, format: uuid }
+        storeId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+        type: { type: string, enum: [saida_perda, ajuste] }
+        reason: { type: string, description: "Obrigatório para saida_perda" }
+        batchId: { type: string, format: uuid }
+    TransferInput:
+      type: object
+      required: [originStoreId, destinationStoreId, items]
+      properties:
+        originStoreId: { type: string, format: uuid }
+        destinationStoreId: { type: string, format: uuid }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              productId: { type: string, format: uuid }
+              batchId: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 1 }
+    StockMovement:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        storeId: { type: string, format: uuid }
+        batchId: { type: string, format: uuid, nullable: true }
+        type: { type: string }
+        quantity: { type: integer }
+        balanceAfter: { type: integer }
+        createdBy: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        metadata: { type: object, additionalProperties: true }
+    Batch:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        storeId: { type: string, format: uuid }
+        batchNumber: { type: string }
+        expiryDate: { type: string, format: date }
+        quantity: { type: integer }
+    NfeImport:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [pending_parse, pending_review, confirmed, discarded, failed] }
+        storeId: { type: string, format: uuid }
+        supplierId: { type: string, format: uuid, nullable: true }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              cProd: { type: string }
+              cEAN: { type: string, nullable: true }
+              xProd: { type: string }
+              qCom: { type: number }
+              vUnComCents: { type: integer }
+              matchedProductId: { type: string, format: uuid, nullable: true }
+              status: { type: string, enum: [matched, unmatched, created] }
+    Product:
+      $ref: "catalog.yaml#/components/schemas/Product"

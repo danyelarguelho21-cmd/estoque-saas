@@ -1,0 +1,151 @@
+openapi: 3.1.0
+info:
+  title: estoque-saas — Tenants, Lojas e Usuários
+  version: "1.0.0"
+security: [{ sessionCookie: [] }]
+paths:
+  /api/tenant:
+    get:
+      summary: Dados da empresa do usuário autenticado
+      operationId: getTenant
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+    patch:
+      summary: Atualiza configurações do tenant (apenas admin)
+      operationId: updateTenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                consolidatedStock: { type: boolean }
+                perishableTrackingEnabled: { type: boolean }
+      responses:
+        "200": { description: Atualizado }
+        "403": { $ref: "_common.yaml#/components/responses/Forbidden" }
+  /api/stores:
+    get:
+      summary: Lista lojas/depósitos do tenant
+      operationId: listStores
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/CursorParam"
+        - $ref: "_common.yaml#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Store" }
+                  page: { $ref: "_common.yaml#/components/schemas/PageInfo" }
+    post:
+      summary: Cria loja/depósito (valida limite do plano)
+      operationId: createStore
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StoreInput" }
+      responses:
+        "201": { description: Criada }
+        "409": { $ref: "_common.yaml#/components/responses/PlanLimitReached" }
+  /api/stores/{storeId}:
+    parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      summary: Atualiza loja
+      operationId: updateStore
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StoreInput" }
+      responses:
+        "200": { description: Atualizada }
+        "404": { $ref: "_common.yaml#/components/responses/NotFound" }
+  /api/users:
+    get:
+      summary: Lista usuários do tenant (apenas admin)
+      operationId: listUsers
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/CursorParam"
+        - $ref: "_common.yaml#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/UserSummary" }
+                  page: { $ref: "_common.yaml#/components/schemas/PageInfo" }
+        "403": { $ref: "_common.yaml#/components/responses/Forbidden" }
+  /api/users/{userId}/role:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      summary: Altera papel de um usuário (apenas admin)
+      operationId: updateUserRole
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [admin, operador, vendedor] }
+      responses:
+        "200": { description: Atualizado }
+        "403": { $ref: "_common.yaml#/components/responses/Forbidden" }
+components:
+  securitySchemes:
+    sessionCookie:
+      $ref: "_common.yaml#/components/securitySchemes/sessionCookie"
+  schemas:
+    Tenant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        cnpj: { type: string }
+        planId: { type: string, format: uuid }
+        consolidatedStock: { type: boolean }
+        perishableTrackingEnabled: { type: boolean }
+        status: { type: string, enum: [active, suspended, canceled] }
+    StoreInput:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [loja, deposito] }
+        address: { type: string }
+    Store:
+      allOf:
+        - $ref: "#/components/schemas/StoreInput"
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+    UserSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [admin, operador, vendedor] }
+        status: { type: string, enum: [active, invited, disabled] }

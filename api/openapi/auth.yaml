@@ -1,0 +1,87 @@
+openapi: 3.1.0
+info:
+  title: estoque-saas — Auth & Onboarding
+  version: "1.0.0"
+paths:
+  /api/auth/signup:
+    post:
+      summary: Onboarding self-service — cria tenant + primeiro admin
+      operationId: signup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [companyName, cnpj, adminName, adminEmail, password, planId]
+              properties:
+                companyName: { type: string }
+                cnpj: { type: string }
+                adminName: { type: string }
+                adminEmail: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                planId: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Tenant e usuário admin criados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenantId: { type: string, format: uuid }
+                  userId: { type: string, format: uuid }
+        "400": { $ref: "_common.yaml#/components/responses/BadRequest" }
+        "409":
+          description: CNPJ ou e-mail já cadastrado
+          content:
+            application/json:
+              schema: { $ref: "_common.yaml#/components/schemas/Error" }
+  /api/auth/login:
+    post:
+      summary: Login (email/senha) — cria sessão Auth.js
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200": { description: Sessão criada (cookie __Host-session) }
+        "401": { $ref: "_common.yaml#/components/responses/Unauthorized" }
+  /api/auth/logout:
+    post:
+      summary: Encerra a sessão atual
+      operationId: logout
+      security: [{ sessionCookie: [] }]
+      responses:
+        "204": { description: Sessão encerrada }
+  /api/users/invite:
+    post:
+      summary: Admin convida um novo usuário para o tenant (verifica limite do plano)
+      operationId: inviteUser
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, role]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                role: { type: string, enum: [admin, operador, vendedor] }
+      responses:
+        "201": { description: Convite enviado, usuário criado com status=invited }
+        "403": { $ref: "_common.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "_common.yaml#/components/responses/PlanLimitReached" }
+components:
+  securitySchemes:
+    sessionCookie:
+      $ref: "_common.yaml#/components/securitySchemes/sessionCookie"

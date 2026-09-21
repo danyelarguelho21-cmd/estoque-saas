@@ -1,0 +1,21 @@
+{
+  "name": "estoque-saas",
+  "private": true,
+  "workspaces": [
+    "libs/shared",
+    "services/app"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace services/app",
+    "build": "npm run build --workspace libs/shared && npm run build --workspace services/app",
+    "worker": "npm run worker --workspace services/app",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "prisma:generate": "npm run prisma:generate --workspace libs/shared",
+    "prisma:migrate": "npm run prisma:migrate --workspace libs/shared"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

@@ -1,0 +1,102 @@
+openapi: 3.1.0
+info:
+  title: estoque-saas — Painel Administrativo Interno (dono do SaaS)
+  version: "1.0.0"
+  description: >
+    Rotas sob /api/platform-admin/*, protegidas por sessão separada (platformSessionCookie),
+    completamente isolada da sessão de tenants (ver design-principles.md — zero-trust interno).
+security: [{ platformSessionCookie: [] }]
+paths:
+  /api/platform-admin/login:
+    post:
+      summary: Login do admin da plataforma (fora do security padrão — sem sessão ainda)
+      operationId: platformAdminLogin
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200": { description: Sessão de plataforma criada }
+        "401": { $ref: "_common.yaml#/components/responses/Unauthorized" }
+  /api/platform-admin/tenants:
+    get:
+      summary: Lista todos os assinantes (tenants) com status de assinatura
+      operationId: listTenantsAdmin
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/CursorParam"
+        - $ref: "_common.yaml#/components/parameters/LimitParam"
+        - name: subscriptionStatus
+          in: query
+          schema: { type: string, enum: [trialing, active, past_due, canceled] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/TenantAdminSummary" }
+                  page: { $ref: "_common.yaml#/components/schemas/PageInfo" }
+  /api/platform-admin/tenants/{tenantId}/suspend:
+    parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Suspende manualmente um tenant (ex: inadimplência crítica, abuso)
+      operationId: suspendTenant
+      responses:
+        "200": { description: Tenant suspenso }
+  /api/platform-admin/tenants/{tenantId}/reactivate:
+    parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Reativa um tenant suspenso
+      operationId: reactivateTenant
+      responses:
+        "200": { description: Tenant reativado }
+  /api/platform-admin/metrics:
+    get:
+      summary: Métricas agregadas da plataforma (MRR, churn, inadimplência)
+      operationId: getPlatformMetrics
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mrrCents: { type: integer }
+                  activeTenantsCount: { type: integer }
+                  pastDueTenantsCount: { type: integer }
+                  churnRateLast30d: { type: number }
+                  newTenantsLast30d: { type: integer }
+components:
+  securitySchemes:
+    platformSessionCookie:
+      $ref: "_common.yaml#/components/securitySchemes/platformSessionCookie"
+  schemas:
+    TenantAdminSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        cnpj: { type: string }
+        planName: { type: string }
+        subscriptionStatus: { type: string, enum: [trialing, active, past_due, canceled] }
+        status: { type: string, enum: [active, suspended, canceled] }
+        createdAt: { type: string, format: date-time }

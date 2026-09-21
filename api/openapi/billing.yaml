@@ -1,0 +1,141 @@
+openapi: 3.1.0
+info:
+  title: estoque-saas — Planos, Assinatura e Cobrança
+  version: "1.0.0"
+paths:
+  /api/plans:
+    get:
+      summary: Lista planos públicos disponíveis (Básico/Pro/Enterprise)
+      operationId: listPlans
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Plan" }
+  /api/billing/subscription:
+    get:
+      summary: Assinatura atual do tenant
+      operationId: getSubscription
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Subscription" }
+    post:
+      summary: Assina um plano (cartão via PagBank ou Pix/boleto avulso mensal)
+      operationId: createSubscription
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planId, paymentMethod]
+              properties:
+                planId: { type: string, format: uuid }
+                paymentMethod: { type: string, enum: [card, pix_boleto] }
+                cardToken:
+                  type: string
+                  description: "Token de cartão tokenizado no client-side (PagBank.js) — obrigatório se paymentMethod=card"
+      responses:
+        "201": { description: Assinatura criada }
+        "402":
+          description: Pagamento recusado
+          content:
+            application/json:
+              schema: { $ref: "_common.yaml#/components/schemas/Error" }
+  /api/billing/subscription/plan:
+    patch:
+      summary: Upgrade/downgrade de plano
+      operationId: changePlan
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planId]
+              properties:
+                planId: { type: string, format: uuid }
+      responses:
+        "200": { description: Plano alterado }
+        "409":
+          description: "Downgrade inválido — tenant excede os limites do plano alvo (ex: mais produtos do que o novo limite permite)"
+          content:
+            application/json:
+              schema: { $ref: "_common.yaml#/components/schemas/Error" }
+  /api/billing/invoices:
+    get:
+      summary: Histórico de faturas do tenant
+      operationId: listInvoices
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/CursorParam"
+        - $ref: "_common.yaml#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Invoice" }
+                  page: { $ref: "_common.yaml#/components/schemas/PageInfo" }
+  /api/webhooks/pagbank:
+    post:
+      summary: Webhook de eventos de pagamento do PagBank (assinatura verificada via PaymentProvider.verifyWebhookSignature)
+      operationId: pagbankWebhook
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Payload bruto do PagBank — normalizado internamente para PaymentWebhookEvent (ADR-004)
+      responses:
+        "200": { description: Evento processado (idempotente por gateway_event_id) }
+        "401": { description: Assinatura inválida — evento rejeitado }
+components:
+  securitySchemes:
+    sessionCookie:
+      $ref: "_common.yaml#/components/securitySchemes/sessionCookie"
+  schemas:
+    Plan:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, enum: [Básico, Pro, Enterprise] }
+        priceCents: { type: integer }
+        maxProducts: { type: integer }
+        maxUsers: { type: integer }
+        maxStores: { type: integer }
+        features: { type: object, additionalProperties: true }
+    Subscription:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        planId: { type: string, format: uuid }
+        status: { type: string, enum: [trialing, active, past_due, canceled] }
+        paymentMethod: { type: string, enum: [card, pix_boleto] }
+        currentPeriodStart: { type: string, format: date-time }
+        currentPeriodEnd: { type: string, format: date-time }
+    Invoice:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        amountCents: { type: integer }
+        status: { type: string, enum: [pending, paid, failed, overdue] }
+        dueDate: { type: string, format: date }
+        paidAt: { type: string, format: date-time, nullable: true }
+        paymentMethod: { type: string, enum: [card, pix, boleto] }
+        pixQrCode: { type: string, nullable: true }
+        boletoUrl: { type: string, nullable: true }

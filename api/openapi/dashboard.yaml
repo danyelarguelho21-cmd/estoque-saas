@@ -1,0 +1,111 @@
+openapi: 3.1.0
+info:
+  title: estoque-saas — Dashboards e Analytics
+  version: "1.0.0"
+security: [{ sessionCookie: [] }]
+paths:
+  /api/dashboard/abc-curve:
+    get:
+      summary: Curva ABC de produtos (por faturamento ou quantidade)
+      operationId: getAbcCurve
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/StoreIdParam"
+        - name: metric
+          in: query
+          schema: { type: string, enum: [revenue, quantity], default: revenue }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    productId: { type: string, format: uuid }
+                    productName: { type: string }
+                    value: { type: number }
+                    cumulativePercentage: { type: number }
+                    class: { type: string, enum: [A, B, C] }
+  /api/dashboard/turnover:
+    get:
+      summary: Giro de estoque por produto/categoria
+      operationId: getStockTurnover
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/StoreIdParam"
+        - name: groupBy
+          in: query
+          schema: { type: string, enum: [product, category], default: product }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    name: { type: string }
+                    turnoverRate: { type: number }
+  /api/dashboard/stalled-products:
+    get:
+      summary: Produtos parados (sem movimento em X dias)
+      operationId: getStalledProducts
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/StoreIdParam"
+        - name: days
+          in: query
+          schema: { type: integer, default: 30 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    productId: { type: string, format: uuid }
+                    productName: { type: string }
+                    lastMovementAt: { type: string, format: date-time, nullable: true }
+  /api/dashboard/best-sellers:
+    get:
+      summary: Produtos mais vendidos por período
+      operationId: getBestSellers
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/StoreIdParam"
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - $ref: "_common.yaml#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    productId: { type: string, format: uuid }
+                    productName: { type: string }
+                    quantitySold: { type: integer }
+                    revenueCents: { type: integer }
+components:
+  securitySchemes:
+    sessionCookie:
+      $ref: "_common.yaml#/components/securitySchemes/sessionCookie"

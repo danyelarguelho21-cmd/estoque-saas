@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: estoque_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      POSTGRES_DB: estoque_saas
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Migrações aplicadas via `make migrate` (Prisma) após o primeiro boot — não montamos
+    # schemas/migrations como initdb.d para não ter duas fontes de verdade de schema
+    # (schemas/migrations/*.sql é a referência RLS/SQL puro; Prisma Migrate é quem efetivamente
+    # aplica o schema no banco de desenvolvimento/produção, gerado a partir do mesmo modelo).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U estoque_app -d estoque_saas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: services/app/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://estoque_app:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/estoque_saas
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/app/Dockerfile
+    command: ["node", "services/app/dist/worker/index.js"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://estoque_app:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/estoque_saas
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
