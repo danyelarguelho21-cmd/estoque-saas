@@ -1,6 +1,15 @@
 // Prisma schema — espelha schemas/migrations/0001_init.sql (fonte de verdade das políticas RLS).
 // Ver docs/architecture/architecture-decision-records/ADR-002-multi-tenancy-strategy.md.
-
+//
+// IMPORTANTE: todo campo id/FK que a ERD (schemas/erd.md) declara como `uuid` tem `@db.Uuid`
+// explícito aqui. Sem isso, Prisma mapeia `String @id @default(uuid())` para a coluna Postgres
+// `text` (não o tipo nativo `uuid`) — descoberto rodando uma migração real contra Postgres neste
+// ambiente (boot-smoke, fase BUILD): as funções SECURITY DEFINER (0004/0005/0007) declaram
+// `RETURNS TABLE (tenant_id uuid, ...)` e todo `$queryRaw`/`$executeRaw` deste código faz cast
+// `${valor}::uuid` — com colunas `text`, a comparação `text = uuid` nem sequer tem operador
+// definido no Postgres (erro em runtime), e a criação das funções falhava na validação de tipo de
+// retorno. Isso teria quebrado silenciosamente (só em runtime, nunca no typecheck) se não tivesse
+// sido pego rodando o boot-smoke real.
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,7 +20,7 @@ datasource db {
 }
 
 model Plan {
-  id           String         @id @default(uuid())
+  id           String         @id @default(uuid()) @db.Uuid
   name         String
   priceCents   Int            @map("price_cents")
   maxProducts  Int            @map("max_products")
@@ -26,7 +35,7 @@ model Plan {
 }
 
 model PlatformAdmin {
-  id           String   @id @default(uuid())
+  id           String   @id @default(uuid()) @db.Uuid
   name         String
   email        String   @unique
   passwordHash String   @map("password_hash")
@@ -36,10 +45,10 @@ model PlatformAdmin {
 }
 
 model Tenant {
-  id                         String   @id @default(uuid())
+  id                         String   @id @default(uuid()) @db.Uuid
   name                       String
   cnpj                       String   @unique
-  planId                     String   @map("plan_id")
+  planId                     String   @map("plan_id") @db.Uuid
   plan                       Plan     @relation(fields: [planId], references: [id])
   consolidatedStock          Boolean  @default(false) @map("consolidated_stock")
   perishableTrackingEnabled  Boolean  @default(false) @map("perishable_tracking_enabled")
@@ -61,8 +70,8 @@ model Tenant {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  tenantId     String   @map("tenant_id")
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
   tenant       Tenant   @relation(fields: [tenantId], references: [id])
   name         String
   email        String
@@ -76,8 +85,8 @@ model User {
 }
 
 model Store {
-  id        String   @id @default(uuid())
-  tenantId  String   @map("tenant_id")
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   name      String
   type      String   @default("loja")
@@ -88,10 +97,10 @@ model Store {
 }
 
 model Subscription {
-  id                     String    @id @default(uuid())
-  tenantId               String    @map("tenant_id")
+  id                     String    @id @default(uuid()) @db.Uuid
+  tenantId               String    @map("tenant_id") @db.Uuid
   tenant                 Tenant    @relation(fields: [tenantId], references: [id])
-  planId                 String    @map("plan_id")
+  planId                 String    @map("plan_id") @db.Uuid
   plan                   Plan      @relation(fields: [planId], references: [id])
   status                 String
   paymentMethod          String    @map("payment_method")
@@ -106,10 +115,10 @@ model Subscription {
 }
 
 model Invoice {
-  id               String       @id @default(uuid())
-  tenantId         String       @map("tenant_id")
+  id               String       @id @default(uuid()) @db.Uuid
+  tenantId         String       @map("tenant_id") @db.Uuid
   tenant           Tenant       @relation(fields: [tenantId], references: [id])
-  subscriptionId   String       @map("subscription_id")
+  subscriptionId   String       @map("subscription_id") @db.Uuid
   subscription     Subscription @relation(fields: [subscriptionId], references: [id])
   amountCents      Int          @map("amount_cents")
   status           String
@@ -126,8 +135,8 @@ model Invoice {
 }
 
 model Supplier {
-  id        String   @id @default(uuid())
-  tenantId  String   @map("tenant_id")
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   name      String
   cnpj      String?
@@ -139,8 +148,8 @@ model Supplier {
 }
 
 model Category {
-  id       String    @id @default(uuid())
-  tenantId String    @map("tenant_id")
+  id       String    @id @default(uuid()) @db.Uuid
+  tenantId String    @map("tenant_id") @db.Uuid
   tenant   Tenant    @relation(fields: [tenantId], references: [id])
   name     String
   products Product[]
@@ -149,16 +158,16 @@ model Category {
 }
 
 model Product {
-  id               String    @id @default(uuid())
-  tenantId         String    @map("tenant_id")
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
   tenant           Tenant    @relation(fields: [tenantId], references: [id])
   sku              String
   name             String
-  categoryId       String?   @map("category_id")
+  categoryId       String?   @map("category_id") @db.Uuid
   category         Category? @relation(fields: [categoryId], references: [id])
   unitOfMeasure    String    @map("unit_of_measure")
   barcode          String?
-  supplierId       String?   @map("supplier_id")
+  supplierId       String?   @map("supplier_id") @db.Uuid
   supplier         Supplier? @relation(fields: [supplierId], references: [id])
   isPerishable     Boolean   @default(false) @map("is_perishable")
   minStockGlobal   Int       @default(0) @map("min_stock_global")
@@ -175,9 +184,10 @@ model Product {
 }
 
 model ProductStoreSetting {
-  productId        String  @map("product_id")
+  tenantId         String  @map("tenant_id") @db.Uuid
+  productId        String  @map("product_id") @db.Uuid
   product          Product @relation(fields: [productId], references: [id])
-  storeId          String  @map("store_id")
+  storeId          String  @map("store_id") @db.Uuid
   minStockOverride Int?    @map("min_stock_override")
 
   @@id([productId, storeId])
@@ -185,11 +195,11 @@ model ProductStoreSetting {
 }
 
 model Batch {
-  id           String   @id @default(uuid())
-  tenantId     String   @map("tenant_id")
-  productId    String   @map("product_id")
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  productId    String   @map("product_id") @db.Uuid
   product      Product  @relation(fields: [productId], references: [id])
-  storeId      String   @map("store_id")
+  storeId      String   @map("store_id") @db.Uuid
   batchNumber  String   @map("batch_number")
   expiryDate   DateTime @map("expiry_date") @db.Date
   quantity     Int      @default(0)
@@ -199,8 +209,8 @@ model Batch {
 }
 
 model Customer {
-  id        String   @id @default(uuid())
-  tenantId  String   @map("tenant_id")
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   name      String
   document  String?
@@ -208,11 +218,133 @@ model Customer {
   email     String?
   createdAt DateTime @default(now()) @map("created_at")
 
+  sales Sale[]
+
   @@map("customers")
 }
 
+model StockMovement {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  storeId       String   @map("store_id") @db.Uuid
+  batchId       String?  @map("batch_id") @db.Uuid
+  type          String
+  quantity      Int
+  unitCostCents Int?     @map("unit_cost_cents")
+  referenceId   String?  @map("reference_id") @db.Uuid
+  createdBy     String   @map("created_by") @db.Uuid
+  metadata      Json     @default("{}")
+  balanceAfter  Int      @map("balance_after")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("stock_movements")
+}
+
+model NfeImport {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  storeId       String    @map("store_id") @db.Uuid
+  supplierId    String?   @map("supplier_id") @db.Uuid
+  accessKey     String?   @map("access_key")
+  fileRef       String    @map("file_ref")
+  status        String    @default("pending_parse")
+  errorMessage  String?   @map("error_message")
+  importedAt    DateTime  @default(now()) @map("imported_at")
+  confirmedBy   String?   @map("confirmed_by") @db.Uuid
+  confirmedAt   DateTime? @map("confirmed_at")
+
+  items NfeImportItem[]
+
+  @@map("nfe_imports")
+}
+
+model NfeImportItem {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  nfeImportId       String   @map("nfe_import_id") @db.Uuid
+  nfeImport         NfeImport @relation(fields: [nfeImportId], references: [id])
+  cProd             String   @map("c_prod")
+  cEAN              String?  @map("c_ean")
+  xProd             String   @map("x_prod")
+  ncm               String?
+  qCom              Decimal  @map("q_com") @db.Decimal(14, 4)
+  vUnComCents       Int      @map("v_un_com_cents")
+  matchedProductId  String?  @map("matched_product_id") @db.Uuid
+  status            String   @default("unmatched")
+
+  @@map("nfe_import_items")
+}
+
+model Sale {
+  id                    String   @id @default(uuid()) @db.Uuid
+  tenantId              String   @map("tenant_id") @db.Uuid
+  storeId               String   @map("store_id") @db.Uuid
+  customerId            String?  @map("customer_id") @db.Uuid
+  customer              Customer? @relation(fields: [customerId], references: [id])
+  sellerId              String   @map("seller_id") @db.Uuid
+  totalAmountCents      Int      @map("total_amount_cents")
+  paymentMethodLabel    String?  @map("payment_method_label")
+  status                String   @default("completed")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  items SaleItem[]
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id              String  @id @default(uuid()) @db.Uuid
+  tenantId        String  @map("tenant_id") @db.Uuid
+  saleId          String  @map("sale_id") @db.Uuid
+  sale            Sale    @relation(fields: [saleId], references: [id])
+  productId       String  @map("product_id") @db.Uuid
+  batchId         String? @map("batch_id") @db.Uuid
+  quantity        Int
+  unitPriceCents  Int     @map("unit_price_cents")
+
+  @@map("sale_items")
+}
+
+model Transfer {
+  id                   String   @id @default(uuid()) @db.Uuid
+  tenantId             String   @map("tenant_id") @db.Uuid
+  originStoreId        String   @map("origin_store_id") @db.Uuid
+  destinationStoreId   String   @map("destination_store_id") @db.Uuid
+  status               String   @default("completed")
+  createdBy            String   @map("created_by") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  items TransferItem[]
+
+  @@map("transfers")
+}
+
+model TransferItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  transferId  String   @map("transfer_id") @db.Uuid
+  transfer    Transfer @relation(fields: [transferId], references: [id])
+  productId   String   @map("product_id") @db.Uuid
+  batchId     String?  @map("batch_id") @db.Uuid
+  quantity    Int
+
+  @@map("transfer_items")
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  type      String
+  payload   Json      @default("{}")
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("notifications")
+}
+
 model StockAlertsConfig {
-  tenantId              String  @id @map("tenant_id")
+  tenantId              String  @id @map("tenant_id") @db.Uuid
   tenant                Tenant  @relation(fields: [tenantId], references: [id])
   lowStockAlertEnabled  Boolean @default(true) @map("low_stock_alert_enabled")
   expiryAlertDays       Json    @default("[30,15,7]") @map("expiry_alert_days")
@@ -221,12 +353,12 @@ model StockAlertsConfig {
 }
 
 model AuditLog {
-  id         String   @id @default(uuid())
-  tenantId   String   @map("tenant_id")
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
   tenant     Tenant   @relation(fields: [tenantId], references: [id])
-  userId     String?  @map("user_id")
+  userId     String?  @map("user_id") @db.Uuid
   entityType String   @map("entity_type")
-  entityId   String   @map("entity_id")
+  entityId   String   @map("entity_id") @db.Uuid
   action     String
   before     Json?
   after      Json?
@@ -234,10 +366,3 @@ model AuditLog {
 
   @@map("audit_log")
 }
-
-// Modelos de estoque/vendas/nfe/transferências/notificações seguem o mesmo padrão
-// (tenant_id + @@map) já estabelecido acima — ver schemas/migrations/0001_init.sql
-// para a lista completa de colunas de stock_movements, nfe_imports, nfe_import_items,
-// sales, sale_items, transfers, transfer_items e notifications. Modelagem completa
-// desses models é concluída na fase BUILD (Software Engineer), a partir da mesma
-// fonte SQL, para não duplicar manutenção entre dois formatos durante a arquitetura.

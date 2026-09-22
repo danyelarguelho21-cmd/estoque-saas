@@ -1,6 +1,16 @@
 -- 0001_init.sql
 -- estoque-saas — schema inicial (multi-tenant, schema compartilhado + RLS)
 -- Ver docs/architecture/architecture-decision-records/ADR-002-multi-tenancy-strategy.md
+--
+-- NOTA (fase BUILD): este arquivo é a referência SQL "pura" do schema, mantida em sincronia manual
+-- com libs/shared/prisma/schema.prisma. Em um ambiente real, `make migrate` roda `prisma migrate
+-- dev|deploy`, que gera e aplica sua PRÓPRIA pasta de migração a partir do schema.prisma — essa é a
+-- fonte que efetivamente cria as tabelas no banco. Este arquivo (+ 0002 e 0003) documenta o DDL
+-- equivalente e é a fonte de verdade das políticas de RLS e separação de roles (Postgres RLS e
+-- `CREATE ROLE`/`GRANT` não são expressáveis na DSL do Prisma) — 0003_app_role_and_grants.sql deve
+-- ser aplicado manualmente (ou via script, ver Makefile) logo após o `prisma migrate deploy`, contra
+-- o mesmo banco, para que a aplicação use uma role restrita (sem BYPASSRLS) em vez da role
+-- administrativa usada pela migração.
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto"; -- gen_random_uuid()
 
@@ -135,6 +145,10 @@ CREATE TABLE products (
 CREATE INDEX idx_products_tenant_barcode ON products (tenant_id, barcode);
 
 CREATE TABLE product_store_settings (
+    tenant_id           uuid NOT NULL REFERENCES tenants(id), -- FIX (security-engineer C-3, BUILD phase):
+                                                                -- coluna ausente na versão original quebrava
+                                                                -- a política RLS de tenant_isolation abaixo
+                                                                -- (referenciava tenant_id inexistente).
     product_id          uuid NOT NULL REFERENCES products(id),
     store_id            uuid NOT NULL REFERENCES stores(id),
     min_stock_override  integer,
