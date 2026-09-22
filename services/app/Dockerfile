@@ -22,10 +22,12 @@ RUN addgroup -S app && adduser -S app -G app
 WORKDIR /repo
 COPY --from=build /repo/node_modules ./node_modules
 COPY --from=build /repo/package.json ./package.json
+COPY --from=build /repo/tsconfig.base.json ./tsconfig.base.json
 COPY --from=build /repo/libs/shared ./libs/shared
 COPY --from=build /repo/services/app/.next ./services/app/.next
 COPY --from=build /repo/services/app/public ./services/app/public
 COPY --from=build /repo/services/app/package.json ./services/app/package.json
+COPY --from=build /repo/services/app/tsconfig.json ./services/app/tsconfig.json
 COPY --from=build /repo/services/app/src ./services/app/src
 COPY --from=build /repo/services/app/next.config.ts ./services/app/next.config.ts
 USER app
