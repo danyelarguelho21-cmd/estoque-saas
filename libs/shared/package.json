@@ -5,8 +5,8 @@
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {
-    "prisma:generate": "prisma generate --schema prisma/schema.prisma",
-    "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "prisma:generate": "dotenv -e ../../.env -- prisma generate --schema prisma/schema.prisma",
+    "prisma:migrate": "dotenv -e ../../.env -- prisma migrate dev --schema prisma/schema.prisma",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -17,6 +17,7 @@
   "devDependencies": {
     "prisma": "^6.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^2.1.0",
+    "dotenv-cli": "^7.4.0"
   }
 }

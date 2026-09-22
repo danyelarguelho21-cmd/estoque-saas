@@ -9,7 +9,12 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # postgres:18+ mudou a convenção de layout de dados (pg_ctlcluster-compatible, nomes de
+      # diretório por versão maior) — o mount precisa ser em /var/lib/postgresql (não mais
+      # .../data como em imagens pre-18), senão o container entra em crash loop no boot
+      # (descoberto rodando o boot-smoke real deste ambiente, Docker disponível — ver
+      # https://github.com/docker-library/postgres/pull/1259).
+      - postgres_data:/var/lib/postgresql
     # Migrações aplicadas via `make migrate` (Prisma) após o primeiro boot — não montamos
     # schemas/migrations como initdb.d para não ter duas fontes de verdade de schema
     # (schemas/migrations/*.sql é a referência RLS/SQL puro; Prisma Migrate é quem efetivamente
@@ -38,7 +43,12 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://estoque_app:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/estoque_saas
+      # DATABASE_URL (role administrativa) não é usada em runtime pela app — apenas por
+      # `make migrate`, tipicamente rodado fora do container app. APP_DATABASE_URL (role
+      # restrita "app_user", sem BYPASSRLS) é a conexão real da aplicação (ver .env.example,
+      # security-engineer finding C-1, e libs/shared/src/db/client.ts).
+      APP_DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD:-devpassword-app-user}@postgres:5432/estoque_saas
+      PLATFORM_ADMIN_DATABASE_URL: postgresql://platform_admin_role:${PLATFORM_ADMIN_DB_PASSWORD:-devpassword-platform-admin}@postgres:5432/estoque_saas
       REDIS_URL: redis://redis:6379
     ports:
       - "3000:3000"
@@ -61,7 +71,8 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://estoque_app:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/estoque_saas
+      # Mesma role restrita "app_user" usada pelo processo web — ver comentário no serviço `app`.
+      APP_DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD:-devpassword-app-user}@postgres:5432/estoque_saas
       REDIS_URL: redis://redis:6379
     depends_on:
       postgres:

@@ -11,6 +11,7 @@ logs:
 
 migrate:
 	npm run prisma:migrate --workspace libs/shared
+	node --env-file=.env scripts/apply-role-grants.mjs
 
 generate:
 	npm run prisma:generate --workspace libs/shared
