@@ -8,9 +8,10 @@
 // exact application bug ADR-002 says RLS must survive. It does NOT go through HTTP, so it stays
 // green/red independent of whether any Route Handler exists yet (unlike the HTTP-level suites,
 // this one only needs the Prisma package + a real Postgres to be meaningful).
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
-import { resetTestDatabase, adminClient, seedPlan, seedTenant, seedUser, seedStore, seedProduct } from "../fixtures/db-test-helpers";
+import { resetTestDatabase, adminClient, appUserClient, seedPlan, seedTenant, seedUser, seedStore, seedProduct } from "../fixtures/db-test-helpers";
 
 // withTenant() is the shared RLS-context helper (ADR-002 §3) — implemented, not a stub, in
 // libs/shared/src/db/client.ts. It depends on `DATABASE_URL` pointing at the SAME database as
@@ -60,7 +61,11 @@ describe("Multi-tenant isolation via Postgres RLS (AC-010, ADR-002)", () => {
   });
 
   it("a SELECT with no tenant context set at all (app.tenant_id unset) returns ZERO rows — fails closed, not open", async () => {
-    const client = adminClient();
+    // FIXED (Wave B): must connect as the restricted `app_user` role — RLS (and therefore this
+    // whole "fails closed" guarantee) is unconditionally bypassed for the admin/migration
+    // superuser connection this test used before, so the assertion could never have failed even
+    // if RLS were completely disabled for app_user.
+    const client = appUserClient();
     await client.connect();
     try {
       // No set_config('app.tenant_id', ...) call at all — mimics a request path that forgot to
@@ -95,9 +100,9 @@ describe("Multi-tenant isolation via Postgres RLS (AC-010, ADR-002)", () => {
     const userA = await seedUser(admin, tenantA.id, { role: "operador" });
 
     await admin.query(
-      `INSERT INTO stock_movements (tenant_id, product_id, store_id, type, quantity, created_by, balance_after)
-       VALUES ($1, $2, $3, 'entrada_manual', 10, $4, 10)`,
-      [tenantA.id, productA, storeA, userA.id],
+      `INSERT INTO stock_movements (id, tenant_id, product_id, store_id, type, quantity, created_by, balance_after)
+       VALUES ($1, $2, $3, $4, 'entrada_manual', 10, $5, 10)`,
+      [randomUUID(), tenantA.id, productA, storeA, userA.id],
     );
 
     const seenByB = await withTenant(tenantB.id, async (tx) => {

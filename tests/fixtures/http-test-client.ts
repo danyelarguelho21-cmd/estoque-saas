@@ -17,17 +17,57 @@ export interface ApiResponse<T = unknown> {
 }
 
 export class ApiClient {
-  private cookie: string | null = null;
+  // FIXED (Wave B, real-stack bug): a single `string | null` field can only ever hold ONE
+  // cookie. Auth.js/NextAuth sets MULTIPLE cookies across the signup -> login flow (CSRF token on
+  // signup, then a *different* `authjs.callback-url` AND the actual session cookie
+  // `session-dev`/`__Secure-session` on login) — verified for real against the running app with
+  // curl. Overwriting a single field on every response silently DROPPED the session cookie the
+  // moment login's `authjs.callback-url` Set-Cookie header arrived after it, so every
+  // "authenticated" request after login/signup was actually sent with no session cookie at all
+  // and came back 401. Real bug caught running these tests against Docker for real, not visible
+  // when nothing could actually connect (Wave A). Fixed by keeping a proper cookie jar
+  // (name -> value), merged across every response, so a new Set-Cookie only replaces the cookie
+  // with the SAME name — every other previously-received cookie (notably the session cookie) is
+  // preserved and sent on every subsequent request.
+  private readonly jar = new Map<string, string>();
 
   constructor(private readonly baseUrl: string = BASE_URL) {}
 
+  /** Replaces the entire cookie jar with a single raw cookie string (e.g. "name=value"). Mostly
+   * useful for tests that want to inject/forge a specific cookie value directly. */
   withCookie(cookie: string | null): this {
-    this.cookie = cookie;
+    this.jar.clear();
+    if (cookie) {
+      for (const pair of cookie.split(";")) {
+        const eq = pair.indexOf("=");
+        if (eq === -1) continue;
+        this.jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+      }
+    }
     return this;
   }
 
+  /** The full `Cookie` request header value this client would currently send. */
   get sessionCookie(): string | null {
-    return this.cookie;
+    if (this.jar.size === 0) return null;
+    return Array.from(this.jar.entries())
+      .map(([name, value]) => `${name}=${value}`)
+      .join("; ");
+  }
+
+  private absorbSetCookies(res: Response): void {
+    const getSetCookie = (res.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+    const rawCookies = typeof getSetCookie === "function"
+      ? getSetCookie.call(res.headers)
+      : (res.headers.get("set-cookie") ? [res.headers.get("set-cookie")!] : []);
+    for (const raw of rawCookies) {
+      const firstPair = raw.split(";")[0] ?? "";
+      const eq = firstPair.indexOf("=");
+      if (eq === -1) continue;
+      const name = firstPair.slice(0, eq).trim();
+      const value = firstPair.slice(eq + 1).trim();
+      this.jar.set(name, value);
+    }
   }
 
   async request<T = unknown>(
@@ -40,7 +80,8 @@ export class ApiClient {
     } = {},
   ): Promise<ApiResponse<T>> {
     const headers: Record<string, string> = { ...options.headers };
-    if (this.cookie) headers["cookie"] = this.cookie;
+    const cookieHeader = this.sessionCookie;
+    if (cookieHeader) headers["cookie"] = cookieHeader;
 
     let body: string | FormData | undefined;
     if (options.multipart) {
@@ -54,10 +95,7 @@ export class ApiClient {
     if (body !== undefined) init.body = body;
     const res = await fetch(`${this.baseUrl}${urlPath}`, init);
     const setCookie = res.headers.get("set-cookie");
-    if (setCookie) {
-      // capture session cookie for subsequent requests on this client instance
-      this.cookie = setCookie.split(";")[0] ?? null;
-    }
+    this.absorbSetCookies(res);
 
     const contentType = res.headers.get("content-type") ?? "";
     const parsedBody = contentType.includes("application/json")

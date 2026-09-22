@@ -8,7 +8,7 @@
 // operador/vendedor users directly via SQL (bcrypt, matching the Auth.js Credentials standard)
 // as a pragmatic workaround — see tests/fixtures/db-test-helpers.ts `seedUser`.
 import { beforeAll, describe, expect, it } from "vitest";
-import { adminClient, resetTestDatabase, seedPlan, seedTenant, seedUser } from "../fixtures/db-test-helpers";
+import { adminClient, randomSuffix, resetTestDatabase, seedPlan, seedStore, seedTenant, seedUser } from "../fixtures/db-test-helpers";
 import { ApiClient, signUpAndLogin } from "../fixtures/http-test-client";
 
 async function loginAs(email: string, password: string) {
@@ -33,8 +33,17 @@ describe("RBAC — role-scoped access control (AC-005)", () => {
       planId = plan.id;
       const tenant = await seedTenant(admin, planId);
       tenantId = tenant.id;
-      vendedor = await seedUser(admin, tenantId, { role: "vendedor", email: "vendedor@example.com" });
-      operador = await seedUser(admin, tenantId, { role: "operador", email: "operador@example.com" });
+      // FIXED (Wave B, real-stack test-pollution bug): hardcoded emails collided across repeated
+      // runs against the shared/persistent dev database (resetTestDatabase() is intentionally a
+      // no-op there — see its doc comment). `auth_lookup_user_by_email`
+      // (schemas/migrations/0004/0009) has no ORDER BY and the application tries every
+      // cross-tenant match against the given password, so a stale row from an earlier run with the
+      // same email AND the same default seedUser() password could — and did, reproduced live —
+      // authenticate this test's login against a DIFFERENT (old, unrelated) tenant, corrupting
+      // this test's product-uniqueness assumptions with a real P2002 several runs later.
+      // Unique per-run emails make this suite safe to run repeatedly against a persistent DB.
+      vendedor = await seedUser(admin, tenantId, { role: "vendedor", email: `vendedor-${randomSuffix()}@example.com` });
+      operador = await seedUser(admin, tenantId, { role: "operador", email: `operador-${randomSuffix()}@example.com` });
     } finally {
       await admin.end();
     }
@@ -100,17 +109,21 @@ describe("RBAC — role-scoped access control (AC-005)", () => {
   });
 
   it("cross-tenant access is a 404, never a 403 (RLS must not leak existence of another tenant's resource — _common.yaml NotFound contract)", async () => {
+    // FIXED (Wave B, real-fixture bug): the original version passed a TENANT id where a STORE id
+    // belongs — never the resource type this test claims to exercise. Seed a real store that
+    // genuinely belongs to a different tenant instead, so a PATCH from tenant A's session is an
+    // actual cross-tenant access attempt on an existing resource.
     const admin = adminClient();
     await admin.connect();
-    let otherTenantId: string;
+    let otherStoreId: string;
     try {
       const otherTenant = await seedTenant(admin, planId, { name: "Outro Tenant" });
-      otherTenantId = otherTenant.id;
+      otherStoreId = await seedStore(admin, otherTenant.id, "Loja de Outro Tenant");
     } finally {
       await admin.end();
     }
     const { client } = await signUpAndLogin(planId);
-    const res = await client.patch(`/api/stores/${otherTenantId}`, { name: "Tentativa cross-tenant" });
+    const res = await client.patch(`/api/stores/${otherStoreId}`, { name: "Tentativa cross-tenant" });
     // Per _common.yaml NotFound: "pertence a outro tenant — RLS nunca vaza 403 vs 404" — the
     // response code itself must not reveal whether the store exists under another tenant.
     expect(res.status).toBe(404);

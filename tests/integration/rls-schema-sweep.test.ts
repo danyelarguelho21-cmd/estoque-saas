@@ -75,13 +75,17 @@ describe("RLS schema sweep (AC-010, ADR-002 mitigation)", () => {
   it("`app_user` role cannot UPDATE or DELETE audit_log rows (ADR-007 immutability)", async () => {
     const { rows } = await client.query<{ privilege_type: string }>(`
       SELECT privilege_type FROM information_schema.role_table_grants
-      WHERE table_name = 'audit_log' AND grantee = 'estoque_app'
+      WHERE table_name = 'audit_log' AND grantee = 'app_user'
     `);
     const privileges = rows.map((r) => r.privilege_type);
-    // NOTE: this assumes the app DB role is named 'estoque_app' (matches docker-compose.yml
-    // POSTGRES_USER / .env.example). If DevOps provisions a differently-named least-privilege
-    // role for the app (vs. the migration-admin role), update this constant — the intent
-    // (INSERT/SELECT yes, UPDATE/DELETE no) is the load-bearing assertion.
+    // FIXED (Wave B, real-DB verification): the app's runtime DB role is `app_user`
+    // (schemas/migrations/0003_app_role_and_grants.sql, libs/shared/src/db/client.ts) — NOBYPASSRLS,
+    // GRANT SELECT+INSERT only on audit_log, UPDATE/DELETE explicitly revoked. `estoque_app` (the
+    // old constant here) is actually the migration-ADMIN/superuser role (POSTGRES_USER) which owns
+    // every table and therefore always shows every privilege — asserting against it could never
+    // have failed this check even if the real app_user grant regressed. Confirmed against the live
+    // stack: `app_user` grants are exactly {INSERT, SELECT} on audit_log.
+    expect(privileges).toEqual(expect.arrayContaining(["INSERT", "SELECT"]));
     expect(privileges).not.toContain("UPDATE");
     expect(privileges).not.toContain("DELETE");
   });

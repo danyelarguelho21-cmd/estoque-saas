@@ -1,8 +1,103 @@
 # Test Plan — estoque-saas
 
-**Author:** QA Engineer (Wave A, parallel with Backend/Frontend engineers — T5a)
-**Status:** Draft acceptance oracle for BUILD. `tests/` is the QA-owned oracle of record
-(loop-protocol Rule 4) — engineers implement against it; they may not edit, skip, or weaken it.
+**Author:** QA Engineer (Wave A, parallel with Backend/Frontend engineers — T5a; Wave B, T5b —
+real execution against the live Docker stack)
+**Status:** `tests/` is the QA-owned oracle of record (loop-protocol Rule 4) — engineers implement
+against it; they may not edit, skip, or weaken it. As of Wave B, the oracle has actually RUN
+against real infrastructure (Postgres 18 + Redis 7 + the real app, via `docker compose up -d`) —
+see "Wave B — Real Execution Summary" immediately below for current, verified status. Everything
+under the original "Phase 8 — Execution Results" further down is the Wave A (no-Docker) record,
+kept for history.
+
+---
+
+## Wave B — Real Execution Summary (T5b, this pass)
+
+Executed for real against the live Docker stack (see root `Claude-Production-Grade-Suite/.orchestrator/tasks.md`
+for stack details). Full narrative in `coverage-report.md`; headline numbers:
+
+| Suite | Real result |
+|---|---|
+| Unit (`tests/unit`) | 7/7 passing |
+| Integration (`tests/integration`, 11 files incl. 2 new Wave B files) | 43/48 passing — 5 failing are GENUINE application bugs (see findings/critical.md C-1, findings/high.md H-1), not test defects |
+| E2E — Playwright (`tests/e2e`, real Chromium against the real running app) | 7/8 passing — the 1 failure is the SAME C-1 bug, reached through the real browser |
+| Performance (k6) | Not run — no `k6` binary in this environment (findings/low.md L-2) |
+
+**New Wave B test files** (closing risk-register gaps explicitly called out for this pass):
+- `tests/integration/transfers.test.ts` — 6 tests, POST /api/transfers, including a dedicated
+  multi-item ATOMICITY test (item 1 valid + item 2 insufficient-stock must roll back BOTH, not
+  just reject item 2) and a perishable-batch-move case. All 6 passing against real Postgres.
+- `tests/integration/plan-downgrade.test.ts` — 5 tests, PATCH /api/billing/subscription/plan,
+  covering blocked-downgrade-over-limit (409 with violations), allowed-downgrade-at-exact-limit,
+  successful downgrade persisting to both `tenants.plan_id` and `subscriptions.plan_id`, upgrade
+  always-allowed, and RBAC (operador denied). All 5 passing.
+
+**Test-bug fixes applied to Wave A scaffolds this pass** (tests/ is QA-owned — fixed freely, no
+approval needed; every fix listed here is a bug in the TEST, confirmed by first reproducing the
+app's real, correct behavior independently via curl/Node-fetch before touching any assertion):
+1. `tests/fixtures/db-test-helpers.ts` — every direct-SQL `INSERT` (`seedPlan`/`seedTenant`/
+   `seedUser`/`seedStore`/`seedProduct`) was missing an explicit `id` column. The real
+   Prisma-generated schema has NO database-level `DEFAULT` on `id` (Prisma's `@default(uuid())`
+   generates client-side, unlike the manually-maintained `schemas/migrations/0001_init.sql`
+   reference file's `DEFAULT gen_random_uuid()`) — every seed helper failed with `null value in
+   column "id"` against the real database. Fixed with `randomUUID()`.
+2. `tests/fixtures/db-test-helpers.ts::resetTestDatabase()` — unconditionally ran `DROP SCHEMA
+   public CASCADE`, which would have destroyed the shared dev database's seeded Plans and any
+   manually-created tenants. Now auto-detects a fresh vs. already-migrated database and is a safe
+   no-op against a persistent/shared one.
+3. `tests/fixtures/db-test-helpers.ts` — added `appUserClient()` (connects as the real, restricted
+   `app_user` role) alongside the existing `adminClient()` (superuser). Two tests
+   (`audit-log.test.ts`'s "app role cannot UPDATE audit_log" check,
+   `multi-tenant-isolation.test.ts`'s "no tenant context -> zero rows" check) were asserting
+   RLS/GRANT behavior while actually connected as the RLS-bypassing superuser — they could never
+   have failed even if the real privilege regressed. Fixed to use `appUserClient()`.
+4. `tests/integration/rls-schema-sweep.test.ts` — asserted `app_user`'s audit_log GRANTs under the
+   constant `grantee = 'estoque_app'` (the pre-BUILD role name; the file's own comment already
+   flagged this as provisional). `estoque_app` is actually the admin/superuser/table-owner role,
+   which always shows every privilege — same class of bug as #3. Fixed to `'app_user'`.
+5. `tests/fixtures/http-test-client.ts::ApiClient` — CRITICAL fixture bug: stored only the single
+   most-recent `Set-Cookie` header in one field, so the session cookie set by `/api/auth/login`
+   (arriving alongside other cookies like `authjs.callback-url`) was silently overwritten/dropped
+   on the very next response, making every "authenticated" request across nearly every integration
+   test come back `401`. Root-caused and reproduced independently via curl before touching any
+   test code. Fixed with a real per-cookie-name jar (`Map<name, value>`), merging every
+   `Set-Cookie` across every response instead of overwriting wholesale.
+6. `tests/integration/rbac.test.ts` — hardcoded `vendedor@example.com` / `operador@example.com`
+   caused real cross-run test pollution once the suite started running against the shared
+   persistent dev database (4 duplicate rows across 4 tenants observed live; the app's own
+   documented cross-tenant-email-match login behavior then non-deterministically authenticated a
+   fresh test run against a STALE tenant from an earlier run, corrupting product-uniqueness
+   assumptions several runs later with a genuine `P2002`). Fixed to randomized per-run emails.
+   Also fixed the cross-tenant-404 test, which was passing a TENANT id where a STORE id belonged
+   (wrong resource type entirely) — now seeds a real store under a different tenant, which
+   correctly surfaces the real H-1 bug (findings/high.md) instead of a meaningless assertion.
+7. `tests/integration/webhook-idempotency.test.ts` + `tests/fixtures/factories/pagbank-webhook.factory.ts`
+   — full rewrite. The Wave A fixture used a header (`x-pagbank-signature`) and payload shape
+   (`{event_id, charge_id, status}`) that never matched the real implementation (real header:
+   `x-authenticity-token`; real payload: the PagBank Orders shape, `{id, charges:[{id,status}]}}`
+   — read directly from `libs/shared/src/payments/providers/pagbank.ts`, written before the real
+   integration existed). Also: `POST /api/billing/subscription` with `pix_boleto` does not create
+   an invoice/charge (that's the `generate-monthly-charge` worker job, out of HTTP-testable scope
+   here) — rewrote setup to seed the invoice directly, matching the shape that job would produce.
+8. `tests/e2e/ui/pages/{signup,login,dashboard}.page.ts` and both `tests/e2e/ui/flows/*.spec.ts` —
+   full rewrite. Wave A assumed English routes (`/signup`, `/login`, `/dashboard`) and a
+   `data-testid` contract; the real frontend uses Portuguese routes (`/cadastro`, `/entrar`,
+   `/painel`) and ships ZERO `data-testid` attributes anywhere (confirmed:
+   `grep -r data-testid services/app/src/app` — no matches). Rewrote against `getByLabel`/
+   `getByRole`, which is in any case the MORE resilient selector per this skill's own rule. Fixed
+   one genuine race in the login-loop E2E spec (asserting the post-logout URL before immediately
+   navigating elsewhere, instead of racing an explicit `page.goto` against `signOut()`'s own
+   in-flight redirect).
+
+**Test-integrity review (TDD pair close-out, loop-protocol Rule 4):** diffed `tests/` against every
+prior commit that touched it (`git log --oneline -- tests/`). Only two commits predate this pass:
+`da95ed5` (Wave A scaffold, this skill's own prior run) and `95f8d0c` (Wave A merge-back). The
+merge-back commit's only change under `tests/` is a single ADDITIVE field
+(`tests/fixtures/factories/batch.factory.ts` gained a `batchId` alias alongside the existing `id`
+field) — no assertion loosened, no case deleted, no `.skip`/`.only` added, no threshold lowered.
+**No weakening found. No Critical test-integrity finding.**
+
+---
 **Inputs read:** `Claude-Production-Grade-Suite/product-manager/BRD/brd.md`, all 8
 `api/openapi/*.yaml` specs, ADR-001 through ADR-007, `docs/architecture/design-principles.md`,
 `schemas/migrations/0001_init.sql`, `libs/shared/prisma/schema.prisma`,
@@ -96,7 +191,7 @@ checked per-tenant not globally → `plan-limits.test.ts` (last case); webhook i
 | stock | POST /api/stock/entries | Integration | P0 | `audit-log.test.ts`, `sales-fefo-override.test.ts` |
 | stock | POST /api/stock/exits | Integration | P0 | `audit-log.test.ts` (reason-required case) |
 | stock | GET /api/stock/fefo-suggestion | Integration | P0 | `sales-fefo-override.test.ts` |
-| stock | POST /api/transfers | — | P1 | **Gap — no scaffold yet**, see below |
+| stock | POST /api/transfers | Integration | P1 | `tests/integration/transfers.test.ts` (Wave B — 6 tests incl. multi-item atomicity + perishable batch move) |
 | stock | POST /api/nfe-imports, GET /api/nfe-imports/{id}, POST .../confirm | Integration, E2E | **P0** | `nfe-import.test.ts`, `nfe-import-journey.spec.ts` |
 | stock | GET /api/alerts/low-stock, /api/alerts/expiring-batches | — | P1 | **Gap — no scaffold yet** (AC-002/AC-004) |
 | sales | GET/POST /api/sales | Integration | P0 | `sales-fefo-override.test.ts`; insufficient-stock 409 case — **gap, not yet scaffolded** |
@@ -104,7 +199,7 @@ checked per-tenant not globally → `plan-limits.test.ts` (last case); webhook i
 | sales | GET/POST /api/customers, GET .../history | — | P2 | Not scaffolded (low complexity CRUD + read) |
 | dashboard | all 4 endpoints (abc-curve, turnover, stalled-products, best-sellers) | Performance only | P2 | `dashboard-abc-curve.k6.js`; correctness assertions not yet scaffolded — **gap**, calculation logic is nontrivial enough to deserve unit tests once the aggregation functions exist |
 | billing | GET /api/plans, GET/POST /api/billing/subscription | Integration | P0 | `webhook-idempotency.test.ts`, `rbac.test.ts` |
-| billing | PATCH /api/billing/subscription/plan | — | P1 | **Gap** — downgrade-below-current-usage 409 case not yet scaffolded |
+| billing | PATCH /api/billing/subscription/plan | Integration | P1 | `tests/integration/plan-downgrade.test.ts` (Wave B — 5 tests: blocked/allowed downgrade, upgrade, RBAC) |
 | billing | GET /api/billing/invoices | — | P2 | Not scaffolded |
 | billing | POST /api/webhooks/pagbank | Integration | **P0** | `webhook-idempotency.test.ts` |
 | admin | POST /api/platform-admin/login | — | P1 | **Gap** — separate session system (platform_admins, RLS-exempt) not yet scaffolded; recommend a dedicated `tests/integration/platform-admin.test.ts` in the next QA pass confirming platform sessions and tenant sessions are fully isolated (zero-trust interno per design-principles.md) |
@@ -153,7 +248,9 @@ own "Common Mistakes" table calls out as counter-productive).
 | 4 | AC-002 (low-stock alert within 1 minute) and AC-004 (expiry alert window) both depend on a BullMQ repeatable job (per ADR-006 §4) with no synchronous HTTP trigger — testing the actual "within 1 minute" timing claim requires either a fast-forwarded job clock or a test-only manual-trigger endpoint. | Medium | Not scaffolded at Wave A; recommend the Backend Engineer expose a test-only `POST /api/_internal/alerts/run` (non-prod only) or that QA test the alert *query* logic directly rather than the job's wall-clock timing. |
 | 5 | `_common.yaml` NotFound response doc states RLS must never leak 403-vs-404, but no endpoint explicitly documents this for every resource — only inferred. | Low | `rbac.test.ts` asserts it for `/api/stores/{id}`; recommend extending to every `{id}`-scoped endpoint once implemented. |
 | 6 | Password hashing algorithm is assumed to be bcrypt (industry standard for an Auth.js Credentials provider) for the purpose of `seedUser()`'s direct-SQL test fixture. | Low | If the Backend Engineer chooses a different algorithm (e.g. argon2), only `tests/fixtures/db-test-helpers.ts` needs updating — no test assertions change. |
-| 7 | This sandbox has no Docker/Postgres available, so integration and most e2e suites could not be run to completion here — see Phase 8 for exactly what WAS verified (unit test collection, strict TypeScript typecheck of the whole `tests/` tree, Playwright test listing, and 2 of 3 real HTTP smoke tests against a genuinely running `next dev` server). | Informational | Recorded as **UNVERIFIED**, not silently assumed passing, per loop-protocol Rule 1. Whoever runs BUILD/HARDEN in an environment with Docker must execute `npm run test:qa:integration:up && npm run test:qa` for the first real signal. |
+| 7 | ~~This sandbox has no Docker/Postgres available~~ **RESOLVED in Wave B** — a full Docker stack (Postgres 18, Redis 7, app, worker) is now available and the ENTIRE suite has actually run against it. See "Wave B — Real Execution Summary" at the top of this file and `coverage-report.md` for the full ledger. Two genuine application bugs were found this way and are NOT hidden by any test weakening — `findings/critical.md` C-1 (NF-e upload EACCES) and `findings/high.md` H-1 (500-vs-404 on not-found resources). | Resolved | — |
+| 8 | `pages.signIn: "/login"` in `services/app/src/modules/auth/auth.config.ts` does not match the real login route `/entrar` — dormant (not currently reachable through the primary auth-guard path, which uses `proxy.ts`'s own redirect), filed as `findings/medium.md` M-1. | Low-Medium | Recommend a one-line fix (`pages: { signIn: "/entrar" }`) during the next remediation pass. |
+| 9 | k6 performance suite (`tests/performance/*.k6.js`) still unexecuted — no `k6` binary in this environment. | Informational | `findings/low.md` L-2. Scripts are ready to run as-is against `http://localhost:3000` once `k6` is available. |
 
 ---
 

@@ -4,7 +4,7 @@
 // indirectly, by checking the audit row always exists whenever the mutation does.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
-import { adminClient, resetTestDatabase, seedPlan } from "../fixtures/db-test-helpers";
+import { adminClient, appUserClient, resetTestDatabase, seedPlan } from "../fixtures/db-test-helpers";
 import { signUpAndLogin } from "../fixtures/http-test-client";
 
 describe("Immutable audit log on stock movements (AC-006, ADR-007)", () => {
@@ -58,9 +58,12 @@ describe("Immutable audit log on stock movements (AC-006, ADR-007)", () => {
   it("audit_log is append-only: the application role cannot UPDATE an existing row (enforced by DB GRANTs, not just app code)", async () => {
     const { rows: anyRow } = await db.query<{ id: string }>(`SELECT id FROM audit_log LIMIT 1`);
     if (anyRow.length === 0) return; // depends on a prior test having produced a row; DB-grant check itself lives in rls-schema-sweep.test.ts
-    // This is an app-role-level check: connecting as the actual `estoque_app` role (not the
-    // admin/migration client) and attempting UPDATE should be rejected by Postgres GRANTs.
-    const appClient = adminClient(); // same connection string; see note in rls-schema-sweep about role naming
+    // FIXED (Wave B): this is an app-role-level check and MUST connect as the real `app_user`
+    // role (NOBYPASSRLS, UPDATE/DELETE revoked on audit_log — schemas/migrations/0003), not the
+    // admin/migration superuser connection reused here before (`adminClient()` owns every table
+    // and can always UPDATE/DELETE — the assertion below could never have failed even if the real
+    // app_user grant regressed). Same class of bug as rls-schema-sweep's `estoque_app` constant.
+    const appClient = appUserClient();
     await appClient.connect();
     try {
       await expect(

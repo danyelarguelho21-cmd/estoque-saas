@@ -11,10 +11,10 @@
 | T6a | Security Engineer — STRIDE threat model | T2 | completed (agent af6031d26f480ce62, worktree) |
 | T6b | Code Reviewer — conformance checklist | T2 | completed (agent a1d3822051a6eaeb0, worktree) |
 | T9a | SRE — SLO definitions | T2 | completed (agent a5eea49c3cff33d37, worktree) |
-| T4b | DevOps — build/push containers | T3a, T4a | pending |
-| T5b | QA Engineer — implement tests | T3a, T3b, T5a | pending |
-| T6c | Security Engineer — code audit + dep scan | T3a, T3b, T6a | pending |
-| T6d | Code Reviewer — actual review | T3a, T3b, T6b | pending |
+| T4b | DevOps — build/push containers | T3a, T4a | superseded (validado manualmente via Docker real nesta sessão) |
+| T5b | QA Engineer — implement tests | T3a, T3b, T5a | completed (agent a8e60567ffdc5b706, main tree — Docker real stack: 50/55 vitest + 7/8 e2e passando, 2 bugs reais achados e reportados, 0 fraqueza de oracle) |
+| T6c | Security Engineer — code audit + dep scan | T3a, T3b, T6a | in_progress (agent ad8fa8a2fa5905714, worktree) |
+| T6d | Code Reviewer — actual review | T3a, T3b, T6b | in_progress (agent a467395d59307a6d9, worktree) |
 | T7 | DevOps — IaC + CI/CD | T5b, T6c, T6d | pending |
 | T8 | Remediation — HARDEN fixes | T5b, T6c, T6d | pending |
 | T9b | SRE — chaos + capacity | T7, T8, T9a | pending |
@@ -35,3 +35,28 @@ favor do QA). Verificado: `npm run build` verde (46 rotas de API + 28 páginas),
 unidade verdes, suíte de testes do QA (`tests/unit`) genuinamente verde, `tests/` typecheck limpo.
 Não verificado (falta Docker neste ambiente): boot real contra Postgres/Redis, testes de
 integração/e2e do QA, `docker build`/`docker compose up`.
+
+## HARDEN Wave B — T5b (QA Engineer) concluído
+
+Suíte `tests/` (oracle de Wave A) executada de verdade contra a stack Docker real
+(`docker compose up -d` — Postgres 18/Redis 7/app/worker saudáveis). Resultado: unit 7/7,
+integration 43/48, e2e (Playwright/Chromium real) 7/8 — total 57/63 (90.5%). As 6 falhas restantes
+são 2 bugs reais e genuínos da aplicação (não do teste), reproduzidos independentemente via
+curl/Node-fetch/`docker compose logs` antes de qualquer alteração em `tests/`:
+
+- **C-1 (Critical)** — upload de NF-e 100% quebrado em produção real: `EACCES` ao escrever em
+  `./.data/uploads` (usuário non-root do container Docker sem permissão, nenhum volume gravável
+  provisionado). Quebra o AC-001 do BRD (critério de aceite mais citado) de ponta a ponta.
+- **H-1 (High)** — recurso inexistente retorna 500 em vez de 404 (Prisma `P2025` de
+  `findUniqueOrThrow`/`findFirstOrThrow` não capturado por `handleRoute()`), sistêmico em ≥6 call
+  sites (stores, users, tenant, transfers, billing×2). Viola o contrato documentado de NotFound.
+
+Findings completos com repro + fix sugerido em `Claude-Production-Grade-Suite/qa-engineer/findings/
+{critical,high,medium,low}.md`. Dois gaps P1 do risk register fechados com suítes novas reais
+(`tests/integration/transfers.test.ts` — 6/6, incl. teste dedicado de atomicidade multi-item;
+`tests/integration/plan-downgrade.test.ts` — 5/5). Revisão de integridade de teste (TDD pair
+close-out): nenhuma fraqueza encontrada em `tests/` desde o merge-back da Wave A (único commit que
+tocou `tests/` antes desta sessão fez uma mudança puramente aditiva). 8 bugs genuínos de teste (não
+da app) corrigidos em `tests/` nesta sessão — ver `qa-engineer/test-plan.md` §"Wave B" para o ledger
+completo (destaque: `http-test-client.ts` tinha um bug de cookie-jar que causava ~20 falsos 401 em
+quase toda a suíte de integração). Receipt: `.orchestrator/receipts/T5b-qa-engineer.json`.
