@@ -1,10 +1,20 @@
 import { Queue } from "bullmq";
-import { QUEUE_NAMES, ValidationError, defaultFileStorage, redisConnectionOptions, type ImportProductsCsvJobData } from "@estoque-saas/shared";
+import {
+  MAX_CSV_UPLOAD_BYTES,
+  QUEUE_NAMES,
+  ValidationError,
+  assertUploadSizeWithinLimit,
+  defaultFileStorage,
+  redisConnectionOptions,
+  type ImportProductsCsvJobData,
+} from "@estoque-saas/shared";
 import { requireRole } from "@/modules/auth";
 import { accepted, handleRoute } from "@/lib/http";
 
 const importQueue = new Queue<ImportProductsCsvJobData>(QUEUE_NAMES.importProductsCsv, { connection: redisConnectionOptions() });
 
+// security-engineer finding H-3: mesmo raciocínio de /api/nfe-imports — worker compartilhado
+// entre todos os tenants (ADR-001), upload sem limite era um vetor de DoS cross-tenant.
 export async function POST(req: Request): Promise<Response> {
   return handleRoute(async () => {
     const ctx = await requireRole("catalog:write");
@@ -13,6 +23,7 @@ export async function POST(req: Request): Promise<Response> {
     if (!(file instanceof File)) {
       throw new ValidationError("Campo 'file' é obrigatório.");
     }
+    assertUploadSizeWithinLimit(file.size, MAX_CSV_UPLOAD_BYTES);
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const fileRef = await defaultFileStorage.save(buffer, file.name);
