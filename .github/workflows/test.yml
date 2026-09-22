@@ -1,0 +1,123 @@
+name: test
+
+# QA-owned test pipeline (tests/ is the oracle of record — loop-protocol Rule 4). If DevOps'
+# own CI skeleton (T4a) also defines build/deploy workflows, reconcile job names at merge time
+# rather than duplicating; this file only owns the test stages below.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --config tests/vitest.config.ts tests/unit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: tests/coverage/
+
+  integration:
+    name: Integration tests (Postgres + Redis)
+    runs-on: ubuntu-latest
+    needs: unit
+    services:
+      postgres-test:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: estoque_app
+          POSTGRES_PASSWORD: devpassword
+          POSTGRES_DB: estoque_saas_test
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U estoque_app -d estoque_saas_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis-test:
+        image: redis:7-alpine
+        ports: ["6380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://estoque_app:devpassword@localhost:5433/estoque_saas_test
+      TEST_REDIS_URL: redis://localhost:6380
+      DATABASE_URL: postgresql://estoque_app:devpassword@localhost:5433/estoque_saas_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate
+      - run: npx vitest run --config tests/vitest.config.ts tests/integration
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: tests/coverage/
+
+  e2e:
+    name: E2E tests (Playwright, full app)
+    runs-on: ubuntu-latest
+    needs: integration
+    services:
+      postgres-test:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: estoque_app
+          POSTGRES_PASSWORD: devpassword
+          POSTGRES_DB: estoque_saas_test
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U estoque_app -d estoque_saas_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis-test:
+        image: redis:7-alpine
+        ports: ["6380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://estoque_app:devpassword@localhost:5433/estoque_saas_test
+      TEST_REDIS_URL: redis://localhost:6380
+      TEST_BASE_URL: http://localhost:3100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --config tests/e2e/playwright.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+  performance:
+    name: Performance smoke (k6, critical flows only)
+    runs-on: ubuntu-latest
+    needs: e2e
+    if: github.ref == 'refs/heads/main' # full load tests run on main only, not every PR
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install k6
+        run: |
+          curl -sL https://github.com/grafana/k6/releases/latest/download/k6-linux-amd64.tar.gz | tar xz --strip-components 1
+      - name: Run product-listing load test
+        env:
+          TEST_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          LOAD_TEST_SESSION_COOKIE: ${{ secrets.LOAD_TEST_SESSION_COOKIE }}
+        run: ./k6 run tests/performance/load-tests/product-listing.k6.js

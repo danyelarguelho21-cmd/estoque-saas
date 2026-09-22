@@ -1,0 +1,40 @@
+# Test-only dependency containers — isolated ports/db name from docker-compose.yml (dev) so the
+# QA suite never touches development data. Mirrors root docker-compose.yml image pins.
+#
+# Usage:
+#   docker compose -f tests/integration/docker-compose.test.yml up -d
+#   TEST_DATABASE_URL=postgresql://estoque_app:devpassword@localhost:5433/estoque_saas_test \
+#   TEST_REDIS_URL=redis://localhost:6380 \
+#     npx vitest run --config tests/vitest.config.ts tests/integration
+#
+# For the e2e-api / e2e-ui suites, also bring up the `app` service (built from the repo, same
+# Dockerfile as prod) pointed at this same test database — see tests/e2e/playwright.config.ts
+# `webServer` for the alternative of running `next dev` directly against these containers.
+services:
+  postgres-test:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: estoque_app
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: estoque_saas_test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U estoque_app -d estoque_saas_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    tmpfs:
+      - /var/lib/postgresql/data # ephemeral — every test run starts from a clean cluster
+
+  redis-test:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

@@ -1,0 +1,12 @@
+{
+  "scenario": "sales-checkout.k6.js",
+  "recorded_at": null,
+  "note": "No baseline recorded yet — see product-listing.baseline.json note. Checkout is the most transactionally expensive write path (stock debit + FEFO + audit log in one transaction), so its p95/p99 budget is intentionally looser than read endpoints.",
+  "expected": {
+    "p50_ms": null,
+    "p95_ms": 800,
+    "p99_ms": 2000,
+    "error_rate_max": 0.01,
+    "throughput_rps_min": null
+  }
+}

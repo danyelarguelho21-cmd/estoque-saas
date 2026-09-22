@@ -1,0 +1,12 @@
+{
+  "scenario": "dashboard-abc-curve.k6.js",
+  "recorded_at": null,
+  "note": "No baseline recorded yet — see product-listing.baseline.json note.",
+  "expected": {
+    "p50_ms": null,
+    "p95_ms": 1500,
+    "p99_ms": 3000,
+    "error_rate_max": 0.01,
+    "throughput_rps_min": null
+  }
+}
