@@ -7,7 +7,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
       POSTGRES_DB: estoque_saas
     ports:
-      - "5432:5432"
+      # Vinculado a loopback: acesso de ferramentas locais (psql, GUI client) continua
+      # funcionando via localhost, mas a porta não fica exposta na rede/interface pública
+      # do host em produção (VPS). App/worker acessam via rede interna do Compose (postgres:5432).
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     # Migrações aplicadas via `make migrate` (Prisma) após o primeiro boot — não montamos
@@ -24,7 +27,8 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      # Ver nota em `postgres.ports` acima — mesma razão (loopback only).
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -68,6 +72,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # Worker não expõe porta HTTP (só consome filas BullMQ) — não há endpoint para curl/wget.
+      # Verifica liveness pela presença do processo Node rodando o entrypoint do worker
+      # (equivalente a um "is it still running" check; não confirma que os jobs estão sendo
+      # processados com sucesso — isso é responsabilidade de métricas/alerting, fora do escopo
+      # deste compose). pgrep é parte do busybox no node:24-alpine (image base do Dockerfile).
+      test: ["CMD-SHELL", "pgrep -f 'src/worker/index.ts' > /dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   postgres_data:
