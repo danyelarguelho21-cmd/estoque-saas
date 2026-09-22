@@ -1,0 +1,2 @@
+sku,name,categoryId,unitOfMeasure,barcode,supplierId,isPerishable,minStockGlobal,costPriceCents,salePriceCents
+PROD-001,Produto de exemplo,,UN,7891234567890,,false,10,1500,2990
