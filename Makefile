@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate generate dev worker test
+.PHONY: up down logs migrate generate dev worker test bootstrap-admin
 
 up:
 	docker compose up -d --build
@@ -12,6 +12,9 @@ logs:
 migrate:
 	npm run prisma:migrate --workspace libs/shared
 	node --env-file=.env scripts/apply-role-grants.mjs
+
+bootstrap-admin:
+	node --env-file=.env scripts/bootstrap-platform-admin.mjs
 
 generate:
 	npm run prisma:generate --workspace libs/shared
