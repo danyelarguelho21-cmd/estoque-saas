@@ -7,4 +7,9 @@ dist/
 build/
 .turbo/
 Claude-Production-Grade-Suite/.orchestrator/receipts/
+.claude/worktrees/
+coverage/
+playwright-report/
+test-results/
+.eslintcache
 
