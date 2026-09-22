@@ -1,14 +1,29 @@
 import type { ReactNode } from "react";
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import { Providers } from "./providers";
+import "./globals.css";
 
-export const metadata = {
-  title: "estoque-saas",
-  description: "Gestão de estoque por assinatura para PMEs brasileiras",
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+export const metadata: Metadata = {
+  title: {
+    default: "estoque-saas",
+    template: "%s · estoque-saas",
+  },
+  description: "Gestão de estoque por assinatura para pequenas e médias empresas brasileiras",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="pt-BR">
-      <body>{children}</body>
+    <html lang="pt-BR" className={inter.variable}>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
