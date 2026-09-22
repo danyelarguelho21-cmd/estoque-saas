@@ -22,6 +22,7 @@ const sqlFiles = [
   "0008_enable_row_level_security.sql",
   "0003_app_role_and_grants.sql",
   "0004_auth_lookup_function.sql",
+  "0009_auth_lookup_tenant_name.sql", // DROP+CREATE de 0004 com tenant_name — deve rodar DEPOIS
   "0005_billing_webhook_lookup_function.sql",
   "0006_platform_admin_role.sql",
   "0007_platform_list_active_tenants_function.sql",
