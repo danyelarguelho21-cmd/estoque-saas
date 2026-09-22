@@ -3,7 +3,6 @@ import {
   ConflictError,
   NotFoundError,
   assertWithinPlanLimit,
-  platformPrisma,
   withTenant,
   type Role,
 } from "@estoque-saas/shared";
@@ -25,7 +24,9 @@ export interface InviteUserResult {
 // e-mail/UI, fora do escopo de backend puro coberto aqui; o status permite login ser bloqueado até
 // ativação, ver check em login.ts/verifyLoginCredentials que exige status === 'active').
 export async function inviteUser(tenantId: string, input: InviteUserInput): Promise<InviteUserResult> {
-  const tenant = await platformPrisma.tenant.findUnique({ where: { id: tenantId }, include: { plan: true } });
+  // `tenants` é RLS-protegida (ADR-002) — leitura precisa passar por withTenant(), nunca
+  // platformPrisma direto (bug real; ver modules/auth/tenant.ts#getTenantWithPlan).
+  const tenant = await withTenant(tenantId, (tx) => tx.tenant.findUnique({ where: { id: tenantId }, include: { plan: true } }));
   if (!tenant) {
     throw new NotFoundError("Tenant não encontrado.");
   }

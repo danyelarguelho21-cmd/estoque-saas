@@ -25,7 +25,11 @@ export interface CreateSubscriptionInput {
 // (ADR-004) — status vira 'active' e a cobrança mensal em si é gerada pelo job
 // `generate-monthly-charge` (worker), não por este endpoint.
 export async function createSubscription(tenantId: string, input: CreateSubscriptionInput) {
-  const tenant = await platformPrisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+  // `tenants` é RLS-protegida (ADR-002) — platformPrisma nunca tem app.tenant_id setado, então
+  // uma leitura direta sempre falhava (bug real encontrado testando via Docker; ver comentário em
+  // modules/auth/tenant.ts#getTenantWithPlan para o histórico completo). `plans` não é RLS-scoped,
+  // platformPrisma continua correto para ele.
+  const tenant = await withTenant(tenantId, (tx) => tx.tenant.findUniqueOrThrow({ where: { id: tenantId } }));
   const plan = await platformPrisma.plan.findUniqueOrThrow({ where: { id: input.planId } });
 
   return withTenant(tenantId, async (tx) => {

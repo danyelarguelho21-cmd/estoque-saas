@@ -7,3 +7,4 @@ export * from "./rbac/index";
 export * from "./plan-limits/index";
 export * from "./storage/index";
 export * from "./queues/index";
+export * from "./config/secure-cookies";

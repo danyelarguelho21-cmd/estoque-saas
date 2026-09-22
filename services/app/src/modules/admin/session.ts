@@ -5,9 +5,12 @@
 // NextAuth coexistindo no mesmo app é mais simples e deixa a fronteira de confiança explícita.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
+import { isSecureDeployment } from "@estoque-saas/shared";
 
-const isProduction = process.env.NODE_ENV === "production";
-const COOKIE_NAME = isProduction ? "__Host-platform-session" : "platform-session-dev";
+// isSecureDeployment() (não NODE_ENV) — ver libs/shared/src/config/secure-cookies.ts para o porquê
+// (bug real: __Host-/Secure sobre HTTP puro faz o navegador descartar o cookie silenciosamente).
+const isSecure = isSecureDeployment();
+const COOKIE_NAME = isSecure ? "__Host-platform-session" : "platform-session-dev";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h
 
 function getSecret(): string {
@@ -33,7 +36,7 @@ export async function createPlatformSession(adminId: string): Promise<void> {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
-    secure: isProduction,
+    secure: isSecure,
     maxAge: SESSION_TTL_MS / 1000,
   });
 }

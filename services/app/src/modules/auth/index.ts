@@ -6,6 +6,6 @@ export { requireSession, requireRole, type SessionContext } from "./rbac";
 export { signupTenant, type SignupInput, type SignupResult } from "./signup";
 export { inviteUser, type InviteUserInput, type InviteUserResult } from "./invite";
 export { hashPassword, verifyPassword } from "./password";
-export { getTenant, updateTenant, type UpdateTenantInput } from "./tenant";
+export { getTenant, getTenantWithPlan, updateTenant, type UpdateTenantInput } from "./tenant";
 export { listStores, createStore, updateStore, type StoreInput, type StoreUpdateInput, type ListStoresFilters } from "./stores";
 export { listUsers, updateUserRole, type ListUsersFilters } from "./users";

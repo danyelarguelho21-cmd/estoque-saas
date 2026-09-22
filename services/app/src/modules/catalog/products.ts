@@ -1,11 +1,11 @@
 import {
   NotFoundError,
   assertWithinPlanLimit,
-  platformPrisma,
   recordAudit,
   withTenant,
   type TenantScopedClient,
 } from "@estoque-saas/shared";
+import { getTenantWithPlan } from "@/modules/auth";
 import { getCurrentStock } from "@/modules/stock";
 
 export interface ProductInput {
@@ -75,7 +75,7 @@ export async function getProduct(tenantId: string, productId: string) {
 }
 
 export async function createProduct(tenantId: string, userId: string, input: ProductInput) {
-  const tenant = await platformPrisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, include: { plan: true } });
+  const tenant = await getTenantWithPlan(tenantId);
 
   return withTenant(tenantId, async (tx) => {
     const currentCount = await tx.product.count({ where: { deletedAt: null } });
