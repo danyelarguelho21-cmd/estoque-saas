@@ -1,0 +1,49 @@
+# .dockerignore — build context enviado ao daemon Docker para services/app/Dockerfile
+# (contexto = raiz do repo, ver docker-compose.yml `build.context: .`).
+# Objetivo: manter o contexto pequeno/rápido e não vazar segredos/artefatos locais para a imagem.
+
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Node
+node_modules
+**/node_modules
+npm-debug.log*
+
+# Next.js build output (regenerado dentro do container pelo próprio build stage)
+.next
+**/.next
+out
+
+# Env / segredos locais — nunca devem entrar no contexto de build
+.env
+.env.*
+!.env.example
+
+# Testes / cobertura (não necessários na imagem de runtime)
+coverage
+**/coverage
+playwright-report
+test-results
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Documentação e artefatos do pipeline production-grade — não fazem parte da aplicação
+docs
+Claude-Production-Grade-Suite/.orchestrator/receipts
+Claude-Production-Grade-Suite/.orchestrator/loops
+Claude-Production-Grade-Suite/**/*.md
+
+# Terraform / infra (não usados neste Dockerfile; evita contexto desnecessário)
+infrastructure
+*.tfstate
+*.tfstate.*
+
+# Logs diversos
+*.log
