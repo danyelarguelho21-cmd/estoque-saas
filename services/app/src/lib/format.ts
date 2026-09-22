@@ -39,12 +39,23 @@ export function formatPercent(value: number | null | undefined, fractionDigits =
   })}%`;
 }
 
-/** Dias até uma data (positivo = futuro, negativo = já venceu). */
+/**
+ * Dias até uma data (positivo = futuro, negativo = já venceu).
+ *
+ * `dateStr` é sempre uma data-calendário (YYYY-MM-DD, ex: batches.expiry_date da API — Postgres
+ * `date`, sem componente de hora). `new Date(dateStr)` interpretaria isso como meia-noite UTC;
+ * `.setHours(0,0,0,0)` depois opera em horário LOCAL — em qualquer fuso atrás de UTC (ex:
+ * America/Cuiaba, UTC-4) isso desloca a data em -1 dia (bug real encontrado pelo teste
+ * "returns 0 for today" após o merge das Waves — ver Claude-Production-Grade-Suite/.orchestrator/
+ * loops/ para o registro). Construímos `target` direto a partir dos componentes ano/mês/dia em
+ * horário LOCAL (`new Date(year, month-1, day)`), nunca via parsing de string + conversão.
+ */
 export function daysUntil(dateStr: string): number {
-  const target = new Date(dateStr);
+  const parts = dateStr.slice(0, 10).split("-").map(Number);
+  const [year = NaN, month = NaN, day = NaN] = parts;
+  const target = new Date(year, month - 1, day);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  target.setHours(0, 0, 0, 0);
   return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 

@@ -4,6 +4,13 @@
 
 export interface BatchFixture {
   id: string;
+  /** Alias de `id` — mesmo valor, campo mantido separado porque a assinatura real de
+   * `suggestFefoBatches` (services/app/src/modules/stock/fefo.ts, FefoBatchInput) usa `batchId`
+   * como nome de campo, não `id`. Integration-seam encontrado no merge-back da Wave A: este
+   * fixture foi escrito contra o contrato do domínio "Batch" completo (schemas/migrations),
+   * FefoBatchInput é um subconjunto propositalmente estreito com outro nome de campo — ambos
+   * corretos em seus próprios contextos, então o fixture carrega os dois em vez de escolher um. */
+  batchId: string;
   productId: string;
   storeId: string;
   batchNumber: string;
@@ -15,8 +22,10 @@ let counter = 0;
 
 export function makeBatch(overrides: Partial<BatchFixture> = {}): BatchFixture {
   counter += 1;
+  const id = overrides.id ?? overrides.batchId ?? `batch-${counter}`;
   return {
-    id: overrides.id ?? `batch-${counter}`,
+    id,
+    batchId: id,
     productId: overrides.productId ?? "product-1",
     storeId: overrides.storeId ?? "store-1",
     batchNumber: overrides.batchNumber ?? `L${counter}`,

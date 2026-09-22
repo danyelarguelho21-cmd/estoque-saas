@@ -23,9 +23,17 @@ export interface FefoSuggestionResult {
 }
 
 // Pura: mesma entrada sempre produz a mesma saída. Não muta `batches`.
+//
+// requestedQuantity <= 0 lança (não retorna vazio silenciosamente): o contrato de
+// api/openapi/stock.yaml já exige `quantity: { minimum: 1 }` na rota que chama esta função — se
+// este pré-condição for violada aqui, é sinal de um bug upstream (ex: um form que deveria ter
+// bloqueado envio com quantidade 0), e falhar alto é preferível a mascarar isso com um resultado
+// "vazio" que parece válido. Alinhado ao teste de aceite QA-owned (tests/unit/stock/fefo.test.ts,
+// AC-003/ADR-006) — encontrado divergente do teste unitário deste mesmo arquivo durante o
+// merge-back da Wave A e reconciliado a favor do oracle do QA (loop-protocol Rule 4).
 export function suggestFefoBatches(batches: readonly FefoBatchInput[], requestedQuantity: number): FefoSuggestionResult {
   if (requestedQuantity <= 0) {
-    return { suggestions: [], fullyCovered: true };
+    throw new Error(`suggestFefoBatches: requestedQuantity deve ser >= 1 (recebido: ${requestedQuantity}).`);
   }
 
   const sorted = [...batches]

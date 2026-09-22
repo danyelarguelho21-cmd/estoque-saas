@@ -7,6 +7,7 @@ import { verifyPassword } from "./password";
 
 interface AuthLookupRow {
   tenant_id: string;
+  tenant_name: string;
   user_id: string;
   name: string;
   password_hash: string;
@@ -17,6 +18,7 @@ interface AuthLookupRow {
 
 export interface AuthenticatedUser {
   tenantId: string;
+  tenantName: string;
   userId: string;
   name: string;
   role: Role;
@@ -33,7 +35,13 @@ export async function verifyLoginCredentials(email: string, plainPassword: strin
     if (row.tenant_status !== "active") continue;
     const matches = await verifyPassword(plainPassword, row.password_hash);
     if (matches) {
-      return { tenantId: row.tenant_id, userId: row.user_id, name: row.name, role: row.role as Role };
+      return {
+        tenantId: row.tenant_id,
+        tenantName: row.tenant_name,
+        userId: row.user_id,
+        name: row.name,
+        role: row.role as Role,
+      };
     }
   }
   return null;

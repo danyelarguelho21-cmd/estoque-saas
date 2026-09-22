@@ -47,11 +47,10 @@ describe("suggestFefoBatches", () => {
     expect(result.suggestions).toEqual([{ batchId: "b2", expiryDate: "2026-11-01", quantity: 5 }]);
   });
 
-  it("returns empty suggestions for a non-positive requested quantity (no-op)", () => {
-    expect(suggestFefoBatches([{ batchId: "b1", expiryDate: "2026-10-01", quantity: 5 }], 0)).toEqual({
-      suggestions: [],
-      fullyCovered: true,
-    });
+  it("throws for a non-positive requested quantity (precondition violation, per OpenAPI minimum: 1)", () => {
+    const batches = [{ batchId: "b1", expiryDate: "2026-10-01", quantity: 5 }];
+    expect(() => suggestFefoBatches(batches, 0)).toThrow();
+    expect(() => suggestFefoBatches(batches, -1)).toThrow();
   });
 
   it("is pure — does not mutate the input batches array", () => {

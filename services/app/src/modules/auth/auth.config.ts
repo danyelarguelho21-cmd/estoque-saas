@@ -59,6 +59,7 @@ export const { handlers, auth, signIn, signOut }: NextAuthResult = NextAuth({
           email,
           name: user.name,
           tenantId: user.tenantId,
+          tenantName: user.tenantName,
           role: user.role,
         };
       },
@@ -68,6 +69,7 @@ export const { handlers, auth, signIn, signOut }: NextAuthResult = NextAuth({
     jwt({ token, user }) {
       if (user) {
         token.tenantId = (user as { tenantId: string }).tenantId;
+        token.tenantName = (user as { tenantName: string }).tenantName;
         token.role = (user as { role: Role }).role;
       }
       return token;
@@ -82,6 +84,7 @@ export const { handlers, auth, signIn, signOut }: NextAuthResult = NextAuth({
         // Postgres real (não pego por typecheck, já que `string | undefined` aceita "").
         session.user.id = token.sub as string;
         session.user.tenantId = token.tenantId as string;
+        session.user.tenantName = token.tenantName as string;
         session.user.role = token.role as Role;
       }
       return session;
