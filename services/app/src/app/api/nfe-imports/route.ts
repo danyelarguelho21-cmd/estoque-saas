@@ -1,5 +1,12 @@
 import { Queue } from "bullmq";
-import { QUEUE_NAMES, ValidationError, redisConnectionOptions, type ParseNfeJobData } from "@estoque-saas/shared";
+import {
+  MAX_NFE_UPLOAD_BYTES,
+  QUEUE_NAMES,
+  ValidationError,
+  assertUploadSizeWithinLimit,
+  redisConnectionOptions,
+  type ParseNfeJobData,
+} from "@estoque-saas/shared";
 import { requireRole } from "@/modules/auth";
 import { uploadNfeImport } from "@/modules/stock";
 import { accepted, handleRoute } from "@/lib/http";
@@ -18,6 +25,8 @@ export async function POST(req: Request): Promise<Response> {
     if (!(file instanceof File) || typeof storeId !== "string" || !storeId) {
       throw new ValidationError("Campos 'file' e 'storeId' são obrigatórios.");
     }
+    // security-engineer finding H-3 — rejeita ANTES de materializar o arquivo em memória.
+    assertUploadSizeWithinLimit(file.size, MAX_NFE_UPLOAD_BYTES);
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const { importId } = await uploadNfeImport(ctx.tenantId, storeId, buffer, file.name);

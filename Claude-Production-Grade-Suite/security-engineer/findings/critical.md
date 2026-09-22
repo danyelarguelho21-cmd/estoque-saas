@@ -1,117 +1,110 @@
-# Critical Findings — Wave A Threat Model (estoque-saas)
+# Critical Findings — Wave B CODE-LEVEL Audit (estoque-saas)
 
-Framing: these are DESIGN-level findings from a pre-implementation architecture review. Items marked **[GROUNDED IN CODE]** are demonstrated directly in scaffolding that already exists (SQL migration, docker-compose, `.env.example`, `libs/shared/*`); others are MUST-VERIFY checklist items for the Wave B code audit once Backend/Frontend Engineers finish BUILD. SLA per severity standard: fix within 24-48h of being confirmed against real code.
-
----
-
-## C-1 — RLS enforcement is inert: single Postgres role is a superuser used by app, worker, and (implicitly) migrations [GROUNDED IN CODE]
-
-**STRIDE:** Tampering, Information Disclosure
-**Evidence:**
-- `docker-compose.yml:6` — `POSTGRES_USER: estoque_app` (the official `postgres` image makes this the cluster's **superuser**/owner on first init).
-- `docker-compose.yml:41` — `app` service `DATABASE_URL: postgresql://estoque_app:...` (same role).
-- `docker-compose.yml:64` — `worker` service uses the identical `DATABASE_URL`/role.
-- `.env.example:5` — `DATABASE_URL=postgresql://estoque_app:devpassword@localhost:5432/estoque_saas` — same pattern for local dev.
-- Repo-wide grep for `CREATE ROLE`, `BYPASSRLS`, `GRANT`, `REVOKE` found **zero** executable SQL/infra statements — only doc comments in ADR-002 (`docs/architecture/architecture-decision-records/ADR-002-multi-tenancy-strategy.md:9`) promising a non-`BYPASSRLS` `app_user` separate from a migration-only privileged role.
-
-**Why it matters:** PostgreSQL RLS policies are **never** applied to a superuser connection, and are not applied to a table's owning role unless `FORCE ROW LEVEL SECURITY` is also set (and even `FORCE` does not bind superusers). As currently configured, `estoque_app` is simultaneously: the role that owns every table (via migrations), the role the running Next.js app connects as, and the role the BullMQ worker connects as. Whether or not `withTenant()` correctly calls `set_config('app.tenant_id', ...)`, **every query sees every tenant's rows**, because RLS is not evaluated at all for this connection. This makes the BRD's explicit, non-negotiable requirement ("isolamento... reforçado em nível de banco... não apenas filtro de aplicação") false in practice, even if every Route Handler's application-level filtering is perfect.
-
-**Required control:**
-1. Create (in a migration or bootstrap script run by CI/deploy, not manually) at least two distinct roles:
-   - A **migration/owner role** (`estoque_migrator` or similar) — owns all tables, used ONLY by `prisma migrate deploy` / CI, never present in the running app's `DATABASE_URL`.
-   - A **runtime `app_user` role** — `NOSUPERUSER NOBYPASSRLS`, granted only the minimum `SELECT/INSERT/UPDATE/DELETE` needed on tenant tables and `SELECT/INSERT` (not `UPDATE/DELETE`) on `audit_log` (see C-2). This is the role the app and worker `DATABASE_URL` must use.
-2. Apply `ALTER TABLE ... FORCE ROW LEVEL SECURITY` on every tenant table as defense in depth, in case ownership is ever misconfigured again.
-3. Update `docker-compose.yml`/`.env.example`/deployment docs so the app/worker `DATABASE_URL` can never accidentally point at the owner/superuser role.
-
-**Wave B verification:** connect to the dev DB as the configured runtime role and run `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user;` — both must be `false`. Then, without calling `withTenant()`, attempt a direct query against a tenant table and confirm it returns zero rows (or errors), not another tenant's data.
+**Status:** Wave B (HARDEN phase) — audited against the real, running implementation
+(`services/app/src/**`, `libs/shared/src/**`, `schemas/migrations/*.sql`, `docker-compose.yml`,
+`services/app/Dockerfile`), not the design-level architecture reviewed in Wave A. This file
+**supersedes** `Claude-Production-Grade-Suite/security-engineer/findings/critical.md` as it stood
+after Wave A — that content is preserved in git history (`threat-model.md` and the Wave A
+commit `2f31bcd`) for reference. All items below were verified by reading the actual code/SQL
+unless explicitly marked "verify against the running stack" (Docker unavailable in this worktree
+— see receipt `verification` field).
 
 ---
 
-## C-2 — `audit_log` immutability GRANT/REVOKE is not applied — only a commented-out SQL line [GROUNDED IN CODE]
+## Wave A criticals — verification result
 
-**STRIDE:** Repudiation, Tampering
-**Evidence:** `schemas/migrations/0001_init.sql:346-348`:
-```sql
--- audit_log: aplicação pode INSERT/SELECT, nunca UPDATE/DELETE (ADR-007).
--- Ajustar GRANTs conforme o usuário de aplicação criado no ambiente (ver docker-compose.yml / .env.example).
--- REVOKE UPDATE, DELETE ON audit_log FROM app_user;
-```
-The `REVOKE` is commented out. No other file in the repo grants/revokes privileges on `audit_log`. Combined with C-1 (no distinct `app_user` role exists at all yet), the audit log is fully `UPDATE`/`DELETE`-able by whatever role the app runs as — the exact opposite of ADR-007's "imutabilidade garantida pelo Postgres, não apenas por convenção de código" claim.
+| ID | Wave A finding | Wave B status | Evidence |
+|----|----------------|----------------|----------|
+| C-1 | RLS inert — single superuser role used everywhere | **CLOSED** | `schemas/migrations/0003_app_role_and_grants.sql:30-35` creates `app_user` with `NOBYPASSRLS NOSUPERUSER`; `schemas/migrations/0008_enable_row_level_security.sql` enables RLS + `tenant_isolation` policy on all 21 tenant-scoped tables (20 `tenant_id`-keyed + `tenants` itself keyed on `id`, + `audit_log`); `docker-compose.yml:54,79` wires `APP_DATABASE_URL=postgresql://app_user:...` for both `app` and `worker` services (never the admin `DATABASE_URL`); `libs/shared/src/db/client.ts:16-31` reads only `APP_DATABASE_URL` for the runtime client and prints a loud warning (never a silent fallback that reaches production, since `APP_DATABASE_URL` is required in `docker-compose.yml`) if it's missing. |
+| C-2 | `audit_log` immutability REVOKE commented out | **CLOSED** | `0003_app_role_and_grants.sql:66-67` — `GRANT SELECT, INSERT ON audit_log TO app_user; REVOKE UPDATE, DELETE ON audit_log FROM app_user;` is real, uncommented SQL, applied by `scripts/apply-role-grants.mjs` after every deploy (idempotent). |
+| C-3 | `product_store_settings` had RLS policy but no `tenant_id` column | **CLOSED** | `libs/shared/prisma/schema.prisma` `ProductStoreSetting` model has `tenantId String @map("tenant_id") @db.Uuid` as a direct (non-subquery) column, included in the 0008 RLS loop. |
+| C-4 | PagBank webhook signature verification unimplemented stub | **CLOSED** | `libs/shared/src/payments/providers/pagbank.ts:187-193` — real implementation: `sha256(secret-payload)` hex digest, `timingSafeEqual` with a length check performed *before* the constant-time compare (this is the correct pattern — `timingSafeEqual` throws on length mismatch, and the length of a fixed-format hex digest is not attacker-useful information; this is not a re-introduction of the timing side-channel the finding warned about). `services/app/src/app/api/webhooks/pagbank/route.ts` reads the body via `req.text()` (raw bytes, never `req.json()` first) and verification runs before any parsing/mutation in `modules/billing/webhook.ts:19-21`. `PagBankProvider`'s constructor fails fast if `apiKey`/`webhookSecret` is empty (`pagbank.ts:90-95`). Unit tests exist (`pagbank.test.ts`, 10 cases). |
+| C-5 | `fast-xml-parser` not XXE-safe by default, no version floor | **CLOSED** | `services/app/src/modules/stock/nfe-parser.ts:27-39` constructs `XMLParser` with `processEntities: false` explicitly; `services/app/package.json:35` pins `fast-xml-parser: ^5.5.8` (above the 5.3.5 CVE-2026-25896 fix line researched in Wave A). |
 
-**Why it matters:** BRD Epic 8 requires an *immutable* audit trail. Without the DB-level `REVOKE`, "immutability" is currently only a code convention (no handler calls `UPDATE`/`DELETE` on `audit_log`) — trivially defeated by a bug, a future migration, an ad-hoc `psql` fix, or a compromised app process with a raw SQL injection elsewhere in the app. This also undermines the audit log's value as evidence in a billing dispute or an LGPD data-processing inquiry.
-
-**Required control:**
-1. Uncomment and actually execute the `REVOKE UPDATE, DELETE ON audit_log FROM app_user;` (or the final role name from C-1) as part of the migration pipeline, run by the migration/owner role — not the runtime role itself (a role cannot usefully revoke privileges from itself as the sole enforcement mechanism if it's also the owner).
-2. Add a CI/QA check that connects as the runtime role and asserts `UPDATE`/`DELETE` on `audit_log` fails with a permission-denied error.
-3. Track ADR-007's documented "future hardening" of trigger-level enforcement as a real backlog item (see Medium finding M-3) rather than leaving it purely aspirational — GRANT-based immutability protects existing rows from tampering, but does nothing for completeness (a mutation that never wrote an audit row can't be "tampered with" either, it's just silently missing).
-
-**Wave B verification:** as runtime `app_user`, attempt `UPDATE audit_log SET action = 'create' WHERE id = '<any>'` and `DELETE FROM audit_log WHERE id = '<any>'` — both must fail with `permission denied for table audit_log`.
-
----
-
-## C-3 — `product_store_settings` enabled for RLS but has no `tenant_id` column [GROUNDED IN CODE]
-
-**STRIDE:** Tampering, Information Disclosure
-**Evidence:**
-- Table definition, `schemas/migrations/0001_init.sql:137-142`:
-```sql
-CREATE TABLE product_store_settings (
-    product_id          uuid NOT NULL REFERENCES products(id),
-    store_id            uuid NOT NULL REFERENCES stores(id),
-    min_stock_override  integer,
-    PRIMARY KEY (product_id, store_id)
-);
-```
-No `tenant_id` column.
-- The blanket RLS-enable loop, `schemas/migrations/0001_init.sql:317-344`, includes `'product_store_settings'` in the table array and (since it is not `'tenants'`) executes:
-```sql
-CREATE POLICY tenant_isolation ON product_store_settings USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-```
-
-**Why it matters:** This migration **will fail at apply time** with `column "tenant_id" does not exist` — a blocking correctness bug the Backend Engineer must fix before the schema can even be deployed. It is flagged here (not just as a code-quality bug) because the *fix* is security-relevant: if a `tenant_id` column is bolted on later without care (no `NOT NULL`, no backfill, no FK, or populated via a join through `product_id`/`store_id` instead of stored directly), it creates exactly the RLS anti-pattern ADR-002 itself warns against in its "Alternatives Considered" section ("tabelas filhas... também precisam de `tenant_id` direto... para que a política RLS seja auto-contida"). A subquery-based or NULL-able `tenant_id` on this table would either break entirely or silently under-enforce.
-
-**Required control:** Add `tenant_id uuid NOT NULL REFERENCES tenants(id)` directly to `product_store_settings`, populated at write time from the same request context as `product_id`/`store_id` (both of which are already tenant-scoped — validate they belong to the same tenant as the row being written, not just trust the FK). Re-run the migration end to end in CI to confirm it applies cleanly.
-
-**Wave B verification:** confirm `schemas/migrations/0001_init.sql` (or its successor migration) applies without error in a clean database, and that `product_store_settings` has a direct, non-null, indexed `tenant_id` column with an active RLS policy.
+**Residual for C-1 specifically:** the role-separation and RLS-enablement are correct *as SQL*,
+but I could not connect to a live Postgres in this worktree (a second stack would port-collide
+with the one already running from the main checkout, per task instructions) to run the two
+Wave-A-specified verification queries. **Verify against the running stack:**
+1. `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user;` connected as
+   `app_user` — both must be `false`.
+2. Attempt a tenant-table query without `withTenant()` (i.e. import `platformPrisma` directly
+   against e.g. `products`) and confirm it returns zero rows, not another tenant's data.
+`tasks.md` already records that `docker compose up --build` was run once for real in this repo's
+history (commit `333cf7e`) and a second-tenant cross-read was empirically confirmed blocked after
+the 0008 migration was added — this is corroborating evidence, not a substitute for re-running
+the two queries above after any future schema change.
 
 ---
 
-## C-4 — PagBank webhook signature verification is an unimplemented stub — forged webhook can mark any invoice paid
+## NEW — CVE-2026-73421 / GHSA-8fpg-xm3f-6cx3: `next-auth` fails open on Auth.js config errors [FIXED]
 
-**STRIDE:** Spoofing, Tampering
-**Evidence:** `libs/shared/src/payments/providers/pagbank.ts:32-34`:
+**STRIDE:** Spoofing, Elevation of Privilege
+**CVSS:** Critical (GitHub Advisory Database severity: critical)
+
+**Evidence:** `npm audit --omit=dev` (production dependency tree only, per task instructions —
+not just devDependencies) reported `next-auth` (pinned `5.0.0-beta.25`, transitively pulling
+`@auth/core@0.37.2`) as **critical**, matching advisory
+[GHSA-8fpg-xm3f-6cx3](https://github.com/advisories/GHSA-8fpg-xm3f-6cx3) /
+CVE-2026-73421, affecting `next-auth` `>=5.0.0-beta.0 <=5.0.0-beta.31`. WebSearch (Sept 2026,
+freshness-protocol Tier 1 — active security advisory) confirmed:
+
+> Applications that gate access by checking only for the existence of the `auth` object returned
+> by the `auth()` wrapper can fail open when Auth.js has a server configuration error — the
+> `auth` object is populated with a truthy error object instead of being `null`, so `if (!auth)`
+> / `!!auth` checks evaluate to `true` for every request, including unauthenticated ones.
+
+**Why this is directly exploitable in this codebase, not theoretical:** `services/app/src/proxy.ts:54`
+uses exactly the vulnerable pattern for every `/api/*` route (the entire tenant API surface):
+
 ```ts
-verifyWebhookSignature(_payload: string, _signature: string): boolean {
-  throw new Error("TODO(BUILD): validar assinatura do webhook conforme documentação do PagBank");
+if (!req.auth) {
+  return NextResponse.json({ code: "UNAUTHORIZED", ... }, { status: 401 });
 }
+return NextResponse.next();
 ```
-`api/openapi/billing.yaml:92-106` correctly specifies `POST /api/webhooks/pagbank` with `security: []` (gateways can't send session cookies) and documents `401: Assinatura inválida — evento rejeitado` as the expected behavior once implemented — the **contract** is correct; the **implementation** does not exist yet.
 
-**Attack (precise, see threat-model.md §3.1 for full detail):** An attacker POSTs a crafted JSON body matching the `charge.paid` shape (or PagBank's real webhook shape, if the handler parses it directly) to `/api/webhooks/pagbank` with no valid signature. If the eventual handler implementation checks only for the *presence* of a signature header, uses non-constant-time comparison, verifies against re-serialized JSON instead of the exact raw bytes PagBank signed, or simply forgets to call `verifyWebhookSignature()` before acting on the event, the forged event is accepted. Result: an unpaid tenant's invoice flips to `paid` and their subscription reactivates with zero payment — or, inversely, a targeted tenant's subscription is forged into `canceled`, an involuntary-suspension DoS.
+and line 78 uses the analogous pattern for every protected tenant page. If Auth.js hits a server
+configuration error at request time (misconfigured `AUTH_SECRET`, a provider error, any of the
+several failure modes the advisory enumerates), `req.auth` becomes a truthy error object instead
+of `null`/`undefined`, `!req.auth` evaluates to `false`, and the proxy lets the request through as
+if authenticated — for every tenant route and every protected page, simultaneously, platform-wide,
+for as long as the misconfiguration persists. This is a full authentication bypass, not a
+narrow edge case.
 
-**Required control (MUST-IMPLEMENT correctly, MUST-VERIFY at Wave B):**
-1. Verify HMAC signature over the **exact raw request body bytes** PagBank sent — read the raw body before any JSON parsing/re-serialization (Next.js Route Handlers must not call a body-parsing helper that could alter byte-for-byte representation before signing verification runs).
-2. Use `crypto.timingSafeEqual` (or equivalent constant-time compare), never `===`/`==` on the computed vs. provided signature/digest.
-3. Verification must run and pass **before** `parseWebhookEvent()` or any state mutation.
-4. `PAGBANK_WEBHOOK_SECRET` must have a boot-time non-empty assertion — the app should refuse to start (not silently accept-all) if the secret is blank/missing in a non-dev environment.
-5. Re-verify PagBank's actual current signature scheme/header name via WebSearch at implementation time (Tier 2 freshness — API details change).
-6. Confirm the existing `gateway_event_id UNIQUE` constraint (`0001_init.sql:93`) still guards idempotency once verification is real.
+**Fix applied:** bumped `next-auth` `5.0.0-beta.25` → `5.0.0-beta.32` in
+`services/app/package.json` (the exact version the advisory names as fixed — verified via
+WebSearch against the GitHub Advisory Database and `npm view next-auth versions`, which confirms
+`5.0.0-beta.32` is also the current latest published version, i.e. this is not a partial/interim
+fix). `npm install --workspaces --include-workspace-root` was re-run to update
+`package-lock.json`, and `npm run prisma:generate` was re-run afterward (a fresh `node_modules`
+drops the generated Prisma client, which briefly broke `tsc --noEmit` across ~15 files until
+regenerated — this is expected after any full reinstall, not a regression from the version bump
+itself).
 
-**Wave B verification:** send a request with a missing signature header → expect 401, zero DB mutation. Send a request with a tampered signature → expect 401. Send a request with a valid signature but already-processed `gateway_event_id` → expect idempotent no-op, not a duplicate charge/state change.
+**Verification performed (this session, no Docker required):**
+- `npm audit --omit=dev` **before** fix: 2 critical (`next-auth`, `@auth/core`), 0 elsewhere.
+- `npm audit --omit=dev` **after** fix: `{"info":0,"low":0,"moderate":0,"high":0,"critical":0,"total":0}`
+  — production dependency tree is clean.
+- `bash Claude-Production-Grade-Suite/.orchestrator/oracle.sh` (typecheck + lint, both workspaces): green.
+- `npm run test --workspaces` (all co-located unit tests, 5+8 files): 75/75 passing, no regressions.
+- `npm run test:qa:unit` (QA's own unit suite): 1 file / 7 tests, unaffected, passing.
+- `npm run build`: green — all 46 API routes + 28 pages compiled successfully against
+  `next-auth@5.0.0-beta.32`.
+- **Not verified (Docker unavailable in this worktree):** an actual live request against a running
+  app with a deliberately broken Auth.js config, confirming the *old* version failed open and the
+  *new* version fails closed. This is a supply-chain/dependency-version fix, not app logic I
+  wrote — the upstream advisory's own fix commit (replacing raw JSON parsing with a validated
+  `parseSessionResponse` handler) is the actual behavioral change, and it is out of this repo's
+  code to re-verify beyond confirming the patched version is installed and the app still builds
+  and passes all tests against it. **Verify against the running stack:** boot the app with an
+  intentionally invalid Auth.js config (e.g. temporarily blank `AUTH_SECRET` in a non-dev-guarded
+  path) and confirm `/api/stock/movements` (or any protected route) returns 401, not 200.
 
----
-
-## C-5 — `fast-xml-parser` is not XXE-safe by default; no safe-parsing configuration specified
-
-**STRIDE:** Information Disclosure, Denial of Service
-**Evidence:** ADR-005 (`docs/architecture/architecture-decision-records/ADR-005-nfe-xml-import.md:6`) and `docs/architecture/tech-stack.md:19` both specify `fast-xml-parser` (`latest`, no version floor, no parser options documented). WebSearch (2026-09, freshness-protocol Tier 1 for a live parsing library's default security posture) confirms: *"XXE protection requires explicit configuration rather than being secure by default"* — the safe configuration requires explicitly setting `processEntities: false` (and related options) on the `XMLParser` instance. WebSearch also surfaced **CVE-2026-25896** (CVSS 9.3, entity-encoding bypass in `fast-xml-parser` → XSS/injection when parsed output reaches HTML/SQL/other contexts), fixed in **5.3.5** (Feb 2026).
-
-**Why it matters:** NF-e XML uploads are attacker-influenced input — any authenticated operador can upload an arbitrary XML file claiming to be a "supplier invoice." Item fields (`xProd`, `cProd`) parsed from that file are persisted (`nfe_import_items`) and rendered in the conferência UI. Without explicit safe-parsing configuration, a crafted `<!DOCTYPE>`/external-entity payload could enable SSRF or local file disclosure via the worker process; without a patched library version, the disclosed CVE's injection path is separately reachable.
-
-**Required control:**
-1. Pin `fast-xml-parser` to `>=5.3.5` (re-verify current patched version at BUILD time).
-2. Explicitly construct the parser with entity/DOCTYPE processing disabled (`processEntities: false` and any related hardening options current at BUILD time).
-3. Reject any uploaded file containing a `<!DOCTYPE` declaration before it reaches the parser at all (legitimate SEFAZ `nfeProc`/`procNFe` XML never contains one) — defense in depth beyond parser config.
-4. Confirm downstream rendering of `xProd`/`cProd` in the Frontend Engineer's conferência screen never uses `dangerouslySetInnerHTML` or an equivalent unescaped sink.
-
-**Wave B verification:** feed a test XML containing a `<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>` payload through the actual import pipeline and confirm it is rejected (not parsed, not reflected) before reaching the parser or, if reaching it, that no entity expansion occurs.
+**Residual devDependency vulnerabilities (not fixed, not blocking):** `npm audit` (full, including
+devDependencies) still reports 8 vulnerabilities (1 critical: `vitest`; 4 high: `prisma`,
+`@prisma/config`, `deepmerge-ts`, `vite`; 3 moderate) — all in the `vitest`/`prisma` CLI toolchain,
+never imported by runtime application code, not reachable from any HTTP-facing path. These are
+tracked as a **Medium** finding below (`M-7`) because `services/app/Dockerfile` currently copies
+the *full* `node_modules` — including devDependencies — into the production runtime image, so
+these unreachable-but-present CVEs would show up in a container image scan even though nothing
+in the running app ever invokes `vitest`/`prisma` CLI code paths.

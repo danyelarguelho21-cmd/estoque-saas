@@ -3,6 +3,7 @@ import {
   ConflictError,
   NotFoundError,
   PlanLimitReachedError,
+  RateLimitedError,
   ValidationError,
   toErrorResponse,
 } from "./index";
@@ -37,6 +38,12 @@ describe("toErrorResponse", () => {
     expect(status).toBe(500);
     expect(body.code).toBe("INTERNAL_ERROR");
     expect(body.message).not.toContain("segredo");
+  });
+
+  it("maps RateLimitedError to 429 with code RATE_LIMITED (security-engineer finding H-5)", () => {
+    const { status, body } = toErrorResponse(new RateLimitedError(), "t-6");
+    expect(status).toBe(429);
+    expect(body.code).toBe("RATE_LIMITED");
   });
 
   it("always includes the trace_id passed in", () => {

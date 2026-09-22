@@ -1,77 +1,70 @@
-# Medium Findings — Wave A Threat Model (estoque-saas)
+# Medium Findings — Wave B CODE-LEVEL Audit (estoque-saas)
 
-SLA per severity standard: fix within 1 sprint of being confirmed against real code. Framed as Wave B verification checklist items unless marked **[GROUNDED IN CODE]**.
-
----
-
-## M-1 — Password hashing algorithm/parameters not yet chosen; must use current 2026 guidance
-
-**STRIDE:** Information Disclosure (credential compromise on DB breach)
-**Evidence:** `users.password_hash` and `platform_admins.password_hash` exist as columns (`schemas/migrations/0001_init.sql:26,50`; `libs/shared/prisma/schema.prisma:32,69`) with no hashing implementation anywhere in the repo yet.
-
-**Required control (WebSearch-verified, 2026-09):** OWASP Password Storage Cheat Sheet currently ranks **Argon2id** first — parameters `t=3, m=64MiB, p=1` (or the equally strong `m=46MiB, t=1` alternative if CPU time is the binding constraint). **bcrypt** is an acceptable fallback only if an Argon2 library is unavailable, with cost factor `>= 12` (13 preferred) — cost `< 10` is no longer considered safe. Apply identically to both `users` and `platform_admins`, with no weaker treatment for the platform-admin table despite it being outside RLS — if anything, its outsized blast radius argues for the stronger end of the parameter range.
-
-**Wave B verification:** inspect the hashing call site; confirm algorithm + parameters match the above (re-verify current guidance at implementation time — Tier 3 freshness, changes over quarters) and that bcrypt's 72-byte truncation limitation (if bcrypt is used) is either documented or mitigated (pre-hash long inputs).
+Supersedes the Wave A version of this file (preserved in git history). SLA per severity standard:
+fix within 1 sprint. Not auto-fixed per task scope (Critical/High only) — documented for the
+remediation backlog.
 
 ---
 
-## M-2 — Platform-admin/tenant session separation is sound in the contract, but unverified in (nonexistent) code
+## Wave A mediums — verification result
 
-**STRIDE:** Spoofing, Elevation of Privilege
-**Evidence:** `api/openapi/_common.yaml:11-20` defines two distinct cookie-based security schemes (`sessionCookie` → `__Host-session`, `platformSessionCookie` → `__Host-platform-session`); `api/openapi/admin.yaml:8` applies `security: [{ platformSessionCookie: [] }]` at the document level; `design-principles.md:28` states the platform panel "usa autenticação e sessão **completamente separadas**." The contract is correctly designed.
-
-**Why it matters:** This guarantee only holds if every `/api/platform-admin/*` Route Handler specifically checks for the platform session type — not just "a session exists." This is exactly boundary-safety.md's Pattern 4 ("global interceptors must branch, never return a hardcoded/blanket result"): a middleware/`proxy.ts` implementation that checks "is there *any* valid Auth.js session" without distinguishing which cookie/session table it came from would silently let a tenant `admin` session into the platform panel, or vice versa. Compounded by H-4 (Auth.js v5 + Next.js 16 beta pairing), this is a plausible, not merely theoretical, implementation risk.
-
-**Required control:** `proxy.ts`/route-level guards for `/api/platform-admin/*` must explicitly validate the `__Host-platform-session` cookie against the `platform_admins` session store, and must explicitly reject (not merely ignore) a valid `__Host-session` tenant cookie presented instead. Symmetric check required in the tenant-side middleware.
-
-**Wave B verification:** end-to-end test (per boundary-safety Pattern 5): log in as a tenant admin, attempt to call `/api/platform-admin/tenants` with only the tenant session cookie present → expect 401, not empty results. Log in as a platform_admin, attempt to call a tenant route (e.g. `/api/stock/movements`) with only the platform session cookie → expect 401.
-
----
-
-## M-3 — Audit log completeness depends on manual `recordAudit()` calls, not an enforced interceptor [GROUNDED IN CODE]
-
-**STRIDE:** Repudiation
-**Evidence:** `libs/shared/src/audit/index.ts` implements `recordAudit()` as a plain async function taking a `tx` and `AuditContext`; nothing in the module system, ORM extension, or middleware calls it automatically for mutations. The comment at the top acknowledges the convention ("toda mutação de domínio que precisa de trilha de auditoria passa por `withAudit()`") but this is enforced only by developer discipline.
-
-**Why it matters:** Unlike RLS (Postgres-enforced regardless of app code, once C-1 is fixed) and unlike the GRANT-based immutability ADR-007 targets (protects *existing* rows from tampering, once C-2 is fixed), nothing prevents a mutation handler from simply forgetting to call `recordAudit()`. This produces a silent gap — no error, no failed test by default — undermining the "toda movimentação de estoque gera um registro de auditoria imutável" acceptance criterion (BRD) and reducing the audit trail's value as LGPD/billing-dispute evidence. ADR-007 itself names this exact trade-off and defers trigger-level enforcement to future hardening.
-
-**Required control:** At minimum, QA Engineer should write integration tests enumerating every mutation code path (stock movements, sale creation, transfers, user role changes, plan changes, tenant status changes) and assert a matching `audit_log` row exists in the same transaction. Given the business criticality here (LGPD + billing-dispute evidence), recommend promoting ADR-007's "future hardening" trigger-level enforcement into the current HARDEN backlog rather than leaving it purely aspirational — a lightweight Postgres trigger that raises/logs when a tracked table is mutated without a corresponding same-transaction `audit_log` insert is a structurally stronger guarantee than code review or test coverage alone.
-
-**Wave B verification:** for each mutation type, confirm an integration test asserts audit-row creation; attempt to intentionally skip `recordAudit()` in a test double and confirm the QA suite catches it (i.e., the coverage is real, not just present in the happy path).
+| ID | Wave A finding | Wave B status |
+|----|----------------|----------------|
+| M-1 | Password hashing algorithm/parameters not chosen | **CLOSED.** `services/app/src/modules/auth/password.ts` — `bcryptjs`, `SALT_ROUNDS = 12`, matching the Wave A guidance floor exactly (Argon2id was the preferred option; bcrypt ≥12 is the documented acceptable fallback). Applied identically to `platform_admins` (`modules/admin/auth.ts:12`, same `bcrypt.compare`). |
+| M-2 | Platform-admin/tenant session separation unverified in (nonexistent) code | **CLOSED.** `proxy.ts` was read in full: `/api/platform-admin/*` is in `PUBLIC_API_PREFIXES` (exempt from the NextAuth `req.auth` check) but every platform-admin route handler independently calls `requirePlatformAdmin()` (`modules/admin/auth.ts`), which reads only the `__Host-platform-session`/`platform-session-dev` cookie via a completely separate HMAC-signed token (`modules/admin/session.ts`) — never NextAuth. A tenant session cookie alone cannot satisfy `requirePlatformAdmin()` (different cookie name, different verification code path entirely), and a platform-admin session cookie alone cannot satisfy `requireSession()` (reads `auth()`/NextAuth JWT only). Symmetric, correctly separated. |
+| M-3 | Audit log completeness depends on manual `recordAudit()` calls | **Still open, unchanged, as designed.** `libs/shared/src/audit/index.ts` remains a plain function; no DB trigger or ORM-level enforcement exists. This was already scoped in Wave A as "track as HARDEN backlog, not block on it" — no regression, no new gap found, spot-checked several mutation paths (`updateUserRole`, `confirmNfeImport`, `processPagBankWebhook`) and all correctly call `recordAudit()` within the same transaction. Recommend QA add the integration-test coverage Wave A specified (enumerate every mutation path, assert a matching `audit_log` row) — this is QA's `tests/` tree, not mine to add. |
+| M-4 | Generic error responses risk leaking internal details | **CLOSED.** `libs/shared/src/errors/index.ts::toErrorResponse` — unknown (non-`AppError`) exceptions always map to a fixed `{code: "INTERNAL_ERROR", message: "Erro interno inesperado."}`, never the caught error's `.message`/stack. `AppError.details` is only ever set by domain code passing intentional, allow-listed data (Zod issue arrays, `{productId}`, etc.) — never a raw exception. Verified via `errors/index.test.ts`'s existing "never leaks internal error messages" case, still passing. |
+| M-5 | LGPD data-subject rights not addressed in BRD/ADRs | **Still open — PM-authority item, not a code finding.** No code change is in scope for this; re-flagging per Wave A's own framing (Security Engineer identifies, Product Manager owns remediation via BRD user stories). |
+| M-6 | NF-e import confirmation should re-validate `nfeImportItemId` ownership beyond RLS | **CLOSED by construction — stronger than the Wave A ask.** Read `modules/stock/nfe-import.ts::confirmNfeImport` in full: the mutation loop iterates `nfeImport.items` (fetched server-side, scoped to the `importId` path param which is itself tenant-scoped via `withTenant()` + `findUnique`) — it does **not** iterate the client-submitted `itemOverrides` array. The client's `nfeImportItemId` values are only used as a `Map` lookup key to find an *optional* batch/expiry override for an item the server already decided is in scope; a submitted ID from a different import (even the same tenant's) simply matches nothing and is silently ignored, never redirected to corrupt an unrelated import. No cross-import mutation is possible by construction, independent of RLS. |
 
 ---
 
-## M-4 — Generic error responses risk leaking internal details via the free-form `details` field
+## NEW — M-7: devDependency CVEs ship into the production Docker image
 
-**STRIDE:** Information Disclosure
-**Evidence:** `api/openapi/_common.yaml:47-62` `Error` schema includes `details: { type: object, additionalProperties: true }` alongside `trace_id`.
+**STRIDE:** Information Disclosure / supply chain (defense-in-depth, not directly exploitable)
+**Evidence:** `npm audit` (full tree, including devDependencies) reports 8 vulnerabilities not
+present in `npm audit --omit=dev`: `vitest` (critical, ≤4.1.10), `prisma`/`@prisma/config` (high,
+CLI tooling), `deepmerge-ts` (high), `vite`/`vite-node`/`esbuild` (moderate/high) — all transitive
+to the `vitest`/`prisma` devDependency toolchain, never imported by any runtime `services/app/src`
+or `libs/shared/src` code path. However, `services/app/Dockerfile`'s `runtime` stage does
+`COPY --from=build /repo/node_modules ./node_modules` — copying the **entire** `node_modules`
+(built via `npm install --workspaces --include-workspace-root`, which installs dev+prod together)
+into the final image, not a pruned production-only tree.
+**Why it matters:** these CVEs are not reachable at runtime (nothing in the running `next start`
+process or the worker ever calls into `vitest`/`prisma` CLI code), but they inflate the deployed
+image's attack surface and will surface as findings in any container image CVE scan (DevOps
+skill's domain per `conflict-resolution.md` — flagging here since I'm the one who found it during
+the dependency audit).
+**Recommended control (routed to DevOps):** add an `npm ci --omit=dev` (or workspace-equivalent)
+production-install stage and copy `node_modules` from *that* stage into `runtime`, instead of
+reusing the `build` stage's full install. Out of scope for me to change (Dockerfile/image
+composition is the DevOps skill's authority per the scope boundary in this skill's own
+instructions) — documented here for the HARDEN→remediation handoff.
 
-**Why it matters:** A free-form, unconstrained `details` object is a plausible sink for a generic exception handler to "helpfully" serialize a caught error's `.message`/`.stack` into the API response — which could reveal internal file paths, Prisma/Postgres error text (potentially including table/column names or fragments of the query), or even hint at the current `app.tenant_id` context. This is a common real-world source of information disclosure that automated scanners rarely catch because it only appears on the *unhappy* path.
+## NEW — M-8: no structural/compile-time guard against future `platformPrisma` misuse for tenant data
 
-**Required control:** The global error handler must map internal exceptions to a small, allow-listed set of `code`/`message` values. Raw exception objects, stack traces, and DB driver error text must never reach `details` for tenant- or platform-admin-facing responses. `trace_id` should correlate to server-side structured logs (12-factor "logs as stream" per design-principles.md) rather than embedding request/user data itself.
+**STRIDE:** Tampering, Information Disclosure (latent, not currently triggered — see H-1 above)
+**Evidence:** `libs/shared/src/db/client.ts` still exports `platformPrisma` as a plain, untyped
+`PrismaClient` reference with no marker distinguishing it from a tenant-safe client. This exact
+bug class was introduced and fixed three separate times across Wave A/B (per `tasks.md`'s own
+commit history) — the current audit found zero live instances, but nothing in the type system
+prevents a fourth occurrence.
+**Recommended control:** add an ESLint rule (e.g. `no-restricted-imports` scoped to
+`services/app/src/modules/**` excluding `modules/admin/**`, `modules/billing/plans.ts`, and the
+specific `SECURITY DEFINER` lookup call sites) that flags any new `platformPrisma` import outside
+an explicit allowlist. This is a Code Reviewer/lint-configuration change, not a runtime fix —
+noting it here since it's the direct, actionable mitigation for a finding I (Security Engineer)
+am the sole authority on identifying.
 
-**Wave B verification:** trigger a DB constraint violation, a Prisma error, and an unhandled exception via each API surface; confirm the JSON response's `details` (if present) contains only intentionally-exposed, non-internal fields.
+## NEW — M-9: no worker-level per-job timeout or per-tenant concurrency limit for NF-e/CSV parsing jobs
 
----
-
-## M-5 — LGPD data-subject rights (access/correction/deletion/portability) not addressed anywhere in BRD/ADRs
-
-**STRIDE:** Information Disclosure (indirectly — regulatory/compliance gap)
-**Evidence:** `Claude-Production-Grade-Suite/product-manager/BRD/constraints.md:16-17` explicitly defers LGPD detail to "Security Engineer na fase HARDEN," but neither the BRD's "Out of Scope" section nor any ADR mentions data-subject rights (LGPD Art. 18: access, correction, anonymization/deletion, portability) for `customers` (end-customer PII: `document`, `phone`, `email` — `0001_init.sql:222-230`) or for tenant users' own data.
-
-**Why it matters:** This is a genuine LGPD compliance gap, not a code vulnerability — flagged here because Security Engineer is the sole authority on PII/compliance findings, but the *remediation* (adding user stories/acceptance criteria) is Product Manager's authority per `conflict-resolution.md`. This finding is a formal cross-functional flag, not a claim that Security Engineer can add these requirements unilaterally.
-
-**Required control (recommendation, routed to PM):** add BRD user stories covering, at minimum: end-customer data deletion/anonymization on request, tenant admin's ability to export/delete a specific customer's data, and a documented data-retention policy for `audit_log`/`stock_movements` (which by design retain historical `customer_id` references indefinitely).
-
-**Wave B verification:** N/A for code audit — track as a PM backlog item; Security Engineer re-confirms scope once BRD is updated (if it is).
-
----
-
-## M-6 — NF-e import confirmation should re-validate `nfeImportItemId` tenant ownership beyond RLS alone
-
-**STRIDE:** Tampering
-**Evidence:** `api/openapi/stock.yaml:138-168` (`POST /api/nfe-imports/{importId}/confirm`) accepts a list of `{nfeImportItemId, batchNumber, expiryDate}` objects. `nfe_import_items` is `tenant_id`-scoped and RLS-protected (`0001_init.sql:204-216`, included in the RLS loop), so cross-tenant reads/writes should already be blocked at the DB layer once C-1 is fixed.
-
-**Why it matters:** Defense in depth: an IDOR-style test (a tenant operador submitting another tenant's `nfeImportItemId` guessed/observed via a shared UUID space) should fail at the RLS layer, but the handler should also explicitly verify each submitted `nfeImportItemId` belongs to the `importId` being confirmed (not just to the caller's tenant) — otherwise a user could reference a *different, own-tenant* import's item ID to corrupt an unrelated import's confirmation state.
-
-**Wave B verification:** submit a confirm request mixing `nfeImportItemId`s from two different `nfe_imports` (both belonging to the same tenant) and confirm the handler rejects the mismatch rather than silently accepting it.
+**STRIDE:** Denial of Service (residual after H-3's size-cap fix)
+**Evidence:** `services/app/src/worker/index.ts` — BullMQ `Worker` instances for `parse-nfe` and
+`import-products-csv` have no `limiter` (per-queue rate) or per-tenant concurrency configuration;
+the size cap added for H-3 closes the *unbounded* version of the resource-exhaustion risk (a
+500MB+ file can no longer be uploaded at all), but a tenant could still enqueue many
+just-under-the-cap (10MB XML / 20MB CSV) jobs back-to-back and consume a disproportionate share of
+the single shared worker's time versus other tenants' billing/alert jobs.
+**Recommended control:** BullMQ's `Worker` constructor `limiter: { max, duration }` option, scoped
+per-tenant via a custom `jobId`/group key, or a separate queue per priority tier. DevOps/SRE
+infrastructure-configuration concern, not application code — noted for remediation planning.
