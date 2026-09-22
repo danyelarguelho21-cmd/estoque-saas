@@ -1,0 +1,285 @@
+# SLI/SLO Definitions — estoque-saas
+#
+# Scope: Wave A (DEFINE→BUILD), SLO definitions only. Chaos engineering and
+# capacity planning are explicitly deferred to SHIP.
+#
+# Authority: SRE is the SOLE owner of these targets (see
+# Claude-Production-Suite/.protocols/conflict-resolution.md). DevOps implements
+# the monitoring/alerting mechanism; it does not change these numbers.
+#
+# Stage context (do not scale these up without re-justifying):
+#   - Solo/pair team, MVP, target <1,000 tenant companies in year 1.
+#   - Single generic VPS, Docker Compose (see ADR-001). No k8s, no multi-region,
+#     no HA failover today. A VPS reboot/patch is an accepted planned-maintenance
+#     event, not an SLO violation, as long as it's brief and off-hours where possible.
+#   - These targets are proportionate to "one Postgres, one Redis, one VPS." They
+#     will look unambitious next to a five-nines enterprise SLO doc — that is
+#     intentional, not an oversight. Revisit when the team/infra actually changes
+#     (see ADR-001's extraction plan), not on a calendar.
+#
+# Containers referenced below (docker-compose.yml): app (web, Next.js), worker
+# (BullMQ, same image/different CMD), postgres, redis.
+
+services:
+  - id: web
+    description: "Next.js app container — UI + Route Handler API (auth, catalog, stock, sales, billing, admin)"
+  - id: worker
+    description: "BullMQ worker container — NF-e XML parsing, billing charge generation, low-stock/expiry alert scans"
+  - id: pagbank-webhook
+    description: "Subset of `web` — the PagBank webhook receiver endpoint(s). Broken out because its SLO is billing-critical and shaped differently (fast-ack + async reconciliation), not just 'part of web'."
+
+slis:
+  # ---------------------------------------------------------------------
+  # 1. Core web availability (all user-facing HTTP requests, `web` container)
+  # ---------------------------------------------------------------------
+  - name: web-core-availability
+    service: web
+    type: availability
+    description: >
+      Proportion of HTTP requests to write-critical/business-critical paths
+      (auth, catalog writes, stock movements/entradas/saídas, sales, billing,
+      admin RBAC) that do not return 5xx and are not dropped/timed out.
+      Excludes client errors (4xx) — those are correct behavior, not outages.
+    good_event: 'http_requests_total{route=~"critical-paths",status!~"5.."}'
+    valid_event: 'http_requests_total{route=~"critical-paths"}'
+    measurement_window: 30d
+
+  - name: web-dashboard-availability
+    service: web
+    type: availability
+    description: >
+      Proportion of successful requests to read-only analytics/dashboard
+      endpoints (curva ABC, giro de estoque, produtos parados). Business
+      rule: BRD treats these as tolerant of staleness/brief unavailability —
+      no money or stock correctness depends on them being up every second.
+    good_event: 'http_requests_total{route=~"dashboard|analytics",status!~"5.."}'
+    valid_event: 'http_requests_total{route=~"dashboard|analytics"}'
+    measurement_window: 30d
+
+  # ---------------------------------------------------------------------
+  # 2. API latency — split read vs. write, since RLS + transactional writes
+  #    (stock movements, sales) are inherently heavier than reads.
+  # ---------------------------------------------------------------------
+  - name: web-read-latency
+    service: web
+    type: latency
+    description: "GET/list endpoints (catalog listing, dashboards, alert lists, sale history)"
+    good_event: 'http_request_duration_seconds_bucket{method="GET",le="<threshold>"}'
+    valid_event: 'http_request_duration_seconds_count{method="GET"}'
+    thresholds:
+      p50: 300ms
+      p95: 1200ms
+    measurement_window: 30d
+
+  - name: web-write-latency
+    service: web
+    type: latency
+    description: >
+      POST/PUT/PATCH endpoints that write inside an RLS-scoped transaction
+      (stock movement, sale registration, NF-e import confirmation, user/role
+      changes). These carry the `set_config('app.tenant_id', ...)` + RLS
+      overhead described in ADR-002.
+    good_event: 'http_request_duration_seconds_bucket{method=~"POST|PUT|PATCH",le="<threshold>"}'
+    valid_event: 'http_request_duration_seconds_count{method=~"POST|PUT|PATCH"}'
+    thresholds:
+      p50: 400ms
+      p95: 1500ms
+    measurement_window: 30d
+
+  - name: web-auth-latency
+    service: web
+    type: latency
+    description: "Login/session endpoints — kept tighter than general writes because a slow login is the first thing a user notices."
+    thresholds:
+      p50: 300ms
+      p95: 800ms
+    measurement_window: 30d
+
+  # ---------------------------------------------------------------------
+  # 3. Background job processing — staleness tolerance is a DELIBERATE
+  #    design choice (ADR-001/ADR-005: async jobs so the request thread and
+  #    UI never block on heavy work). Each job type gets its own bound
+  #    because their user-facing urgency is different.
+  # ---------------------------------------------------------------------
+  - name: job-nfe-import-latency
+    service: worker
+    type: freshness
+    description: >
+      Time from XML upload (job enqueued) to `nfe_imports.status` leaving
+      `pending_review`-eligible parsed state (i.e. parsing done, items listed
+      for operator review). Per ADR-005 the UI already polls for this
+      asynchronously — the bound exists so "stuck" imports are caught, not
+      because the operator is blocked waiting synchronously.
+    thresholds:
+      p50_start_delay: 30s   # time until job picked up off the queue
+      p95_completion: 5m     # time until parsing finishes, typical XML (<500 items)
+      hard_ceiling: 15m      # beyond this, treat as stuck — page/alert (see worker-queue-backlog runbook)
+    measurement_window: 30d
+
+  - name: job-billing-charge-generation-latency
+    service: worker
+    type: freshness
+    description: >
+      Pix/boleto avulso charge generation (BRD Epic 9: system generates the
+      next cycle's charge N days before due date and reconciles by webhook).
+      This runs on a schedule, not on a user action, so the bound is "did it
+      run in its window," not "how many seconds."
+    thresholds:
+      p95_completion_after_scheduled_run: 30m
+      hard_ceiling: 24h   # a charge that isn't generated within 1 day of its scheduled run risks a customer going unbilled before due date — treat as billing-critical incident, not backlog
+    measurement_window: 30d
+
+  - name: job-alert-scan-latency
+    service: worker
+    type: freshness
+    description: >
+      Low-stock and expiry alert generation. NOTE: this is NOT a
+      discretionary SRE target — it is a hard business acceptance criterion
+      from the BRD: "produto com estoque abaixo do mínimo... aparece na
+      lista de alertas em até 1 minuto após a movimentação." This SLO exists
+      to make that BRD AC operationally observable and enforceable.
+    good_event: 'alert_generated_at - triggering_stock_movement_at <= 60s'
+    thresholds:
+      p95: 60s     # matches BRD acceptance criterion verbatim
+      hard_ceiling: 5m   # beyond this, the BRD AC is being violated in production — treat as a functional bug, not tuning
+    measurement_window: 30d
+
+  # ---------------------------------------------------------------------
+  # 4. PagBank webhook processing — billing-critical. A missed/slow webhook
+  #    can lock out a paying customer or leave a non-paying one with access.
+  # ---------------------------------------------------------------------
+  - name: pagbank-webhook-ack-latency
+    service: pagbank-webhook
+    type: latency
+    description: >
+      Time for the webhook endpoint to validate signature (ADR-004
+      `verifyWebhookSignature`), persist the raw event, enqueue it for async
+      reconciliation, and return HTTP 200 — i.e. the endpoint does NOT do
+      the actual subscription-state update inline. This is deliberate: a
+      slow synchronous handler risks the gateway timing out and retrying,
+      which risks duplicate/out-of-order processing.
+    thresholds:
+      p95_ack: 2s
+      hard_ceiling: 5s
+    measurement_window: 30d
+
+  - name: pagbank-webhook-reconciliation-latency
+    service: worker
+    type: freshness
+    description: >
+      Time from webhook ack to the subscription/invoice state actually
+      being updated (payment confirmed → subscription active; payment
+      failed → grace period logic per BRD Open Question on carência).
+      Bounded tightly because BRD explicitly calls out the risk: "pagamento
+      recusado... marca a assinatura como inadimplente" must happen
+      promptly, and a Pix/boleto payment confirmation must land before a
+      customer is incorrectly treated as overdue.
+    thresholds:
+      p95: 60s
+      hard_ceiling: 15m
+    measurement_window: 30d
+
+  - name: pagbank-webhook-availability
+    service: pagbank-webhook
+    type: availability
+    description: "Proportion of inbound webhook deliveries that are ack'd 2xx on first attempt (post-signature-validation failures excluded — those are correctly-rejected forgeries, not outages)."
+    thresholds:
+      target: 99.5
+    measurement_window: 30d
+
+slos:
+  - name: web-core-availability-slo
+    sli: web-core-availability
+    target: 99.5
+    window: 30d
+    rationale: >
+      99.5%, not 99.9%+: single VPS, single Postgres, single Redis, no
+      failover today (ADR-001). 99.5%/30d = ~3h36m of allowed downtime per
+      month, which comfortably covers a planned VPS patch/restart window
+      plus some unplanned incident time. Tightening this requires HA infra
+      first (extraction plan in ADR-001), not just intent.
+    consequences: |
+      Error budget policy in error-budget-policy.md. Summary: budget < 50%
+      remaining mid-window → flag and prioritize reliability work next
+      sprint. Budget fully exhausted → freeze new feature shipping until
+      back above 20% remaining, except billing/security emergency fixes.
+
+  - name: web-dashboard-availability-slo
+    sli: web-dashboard-availability
+    target: 99.0
+    window: 30d
+    rationale: "Lower than core because BRD/product treats dashboards as staleness-tolerant, read-only, non-blocking to any money or stock-correctness flow."
+    consequences: "Tracked, but does NOT trigger the deployment freeze on its own — see error-budget-policy.md."
+
+  - name: web-read-latency-slo
+    sli: web-read-latency
+    target: 95.0   # proportion of read requests meeting p95 threshold above
+    window: 30d
+    consequences: "Sustained breach (>2 consecutive weekly checks) → performance review before next feature ships in the affected module."
+
+  - name: web-write-latency-slo
+    sli: web-write-latency
+    target: 95.0
+    window: 30d
+    consequences: "Sustained breach → performance review; check for missing indexes on tenant_id-scoped queries and RLS policy cost first (known risk area, ADR-002)."
+
+  - name: job-nfe-import-slo
+    sli: job-nfe-import-latency
+    target: 95.0   # proportion of imports completing within p95_completion
+    window: 30d
+    consequences: "Breach → check worker-queue-backlog runbook first (docs/runbooks/worker-queue-backlog-growing.md); most likely cause is queue depth, not parser slowness."
+
+  - name: job-billing-charge-generation-slo
+    sli: job-billing-charge-generation-latency
+    target: 99.0
+    window: 30d
+    consequences: "Any single miss of hard_ceiling (24h) is treated as a billing incident (SEV-2 minimum) regardless of the rolling SLO — see pagbank-webhook runbook for the adjacent billing-critical process."
+
+  - name: job-alert-scan-slo
+    sli: job-alert-scan-latency
+    target: 99.0
+    window: 30d
+    consequences: "This SLO is a proxy for a BRD acceptance criterion, not a tunable target. Breach → functional bug ticket, not 'accept and move on.'"
+
+  - name: pagbank-webhook-ack-slo
+    sli: pagbank-webhook-ack-latency
+    target: 99.0
+    window: 30d
+    consequences: "Sustained breach risks PagBank retry storms (ASSUMPTION — see note below) and duplicate webhook processing. Treat as high-priority even below the freeze threshold."
+
+  - name: pagbank-webhook-reconciliation-slo
+    sli: pagbank-webhook-reconciliation-latency
+    target: 99.0
+    window: 30d
+    consequences: "Breach → check for stuck billing-queue jobs first (docs/runbooks/pagbank-webhook-processing-stopped.md)."
+
+  - name: pagbank-webhook-availability-slo
+    sli: pagbank-webhook-availability
+    target: 99.5
+    window: 30d
+    consequences: "Any exhaustion of this budget freezes feature work in the billing module specifically, independent of the global freeze threshold, because the blast radius (locked-out paying customers, or non-paying customers keeping access) is disproportionate to team size."
+
+# ---------------------------------------------------------------------
+# ASSUMPTION FLAG — PagBank webhook retry/timeout policy
+# ---------------------------------------------------------------------
+# WebSearched (2026-09-21): https://developer.pagbank.com.br/reference/webhooks-checkout
+# and PagBank developer community threads (e.g.
+# https://developer.pagbank.com.br/discuss/6790ee0e9ffd4a002a8a2bd6 — a developer
+# asking exactly this question). PagBank's public docs do NOT document a specific
+# retry count, backoff interval, or receiver timeout for webhook delivery.
+#
+# ASSUMPTION (flagged, not verified): treat PagBank like most payment gateways of
+# similar maturity — assume it may retry on non-2xx response or on receiver
+# timeout, with a receiver timeout in the 10-15s range and a small number of
+# retries (single digits) with backoff over a bounded window (hours, not
+# indefinite). Design defensively against this assumption:
+#   1. Ack fast (p95 2s / ceiling 5s, per pagbank-webhook-ack-slo above) —
+#      cheaper than finding out the hard way what PagBank's real timeout is.
+#   2. Process idempotently — dedupe on PagBank's notification/event ID with a
+#      unique constraint in a `processed_webhook_events` table (or equivalent),
+#      so an unknown retry policy can never double-apply a payment/subscription
+#      state change. This is the actual mitigation — it makes the assumption's
+#      correctness irrelevant.
+#   3. Before GA/first paying customer: re-verify by contacting PagBank support
+#      or triggering a controlled webhook failure in sandbox and observing
+#      actual retry behavior. Update this doc with verified numbers.
