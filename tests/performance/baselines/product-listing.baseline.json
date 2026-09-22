@@ -1,0 +1,12 @@
+{
+  "scenario": "product-listing.k6.js",
+  "recorded_at": null,
+  "note": "No baseline recorded yet — services/app has no implementation to measure against as of Wave A. Populate p50/p95/p99/throughput after the first HARDEN-phase load test run against a BUILD-complete deployment; CI should then diff future runs against this file.",
+  "expected": {
+    "p50_ms": null,
+    "p95_ms": 500,
+    "p99_ms": 1200,
+    "error_rate_max": 0.01,
+    "throughput_rps_min": null
+  }
+}

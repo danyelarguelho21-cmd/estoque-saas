@@ -8,3 +8,11 @@ build/
 .turbo/
 Claude-Production-Grade-Suite/.orchestrator/receipts/
 
+# Test run artifacts (QA-owned tests/ tree — see tests/vitest.config.ts, tests/e2e/playwright.config.ts)
+tests/test-results/
+tests/playwright-report/
+tests/coverage/html/
+tests/coverage/*.xml
+playwright-report/
+test-results/
+

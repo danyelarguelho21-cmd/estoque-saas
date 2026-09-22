@@ -13,9 +13,23 @@
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "prisma:generate": "npm run prisma:generate --workspace libs/shared",
-    "prisma:migrate": "npm run prisma:migrate --workspace libs/shared"
+    "prisma:migrate": "npm run prisma:migrate --workspace libs/shared",
+    "test:qa:unit": "vitest run --config tests/vitest.config.ts tests/unit",
+    "test:qa:integration": "vitest run --config tests/vitest.config.ts tests/integration",
+    "test:qa": "vitest run --config tests/vitest.config.ts",
+    "test:qa:e2e": "playwright test --config tests/e2e/playwright.config.ts",
+    "test:qa:integration:up": "docker compose -f tests/integration/docker-compose.test.yml up -d",
+    "test:qa:integration:down": "docker compose -f tests/integration/docker-compose.test.yml down -v"
   },
   "engines": {
     "node": ">=24.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0",
+    "@playwright/test": "^1.48.0",
+    "pg": "^8.13.0",
+    "@types/pg": "^8.11.0",
+    "bcryptjs": "^2.4.3",
+    "@types/bcryptjs": "^2.4.6"
   }
 }

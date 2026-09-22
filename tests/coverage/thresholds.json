@@ -1,0 +1,11 @@
+{
+  "global": { "lines": 80, "branches": 75, "functions": 80, "statements": 80 },
+  "services": {
+    "stock": { "lines": 90, "branches": 85, "functions": 90, "statements": 90, "note": "FEFO + NF-e import — highest-risk domain logic per ADR-005/ADR-006, held to a stricter bar" },
+    "billing": { "lines": 90, "branches": 85, "functions": 90, "statements": 90, "note": "payment webhook idempotency + plan-limit enforcement — money and access on the line" },
+    "auth": { "lines": 85, "branches": 80, "functions": 85, "statements": 85 },
+    "catalog": { "lines": 80, "branches": 75, "functions": 80, "statements": 80 },
+    "sales": { "lines": 85, "branches": 80, "functions": 85, "statements": 85 },
+    "admin": { "lines": 75, "branches": 70, "functions": 75, "statements": 75 }
+  }
+}
