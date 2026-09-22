@@ -23,4 +23,15 @@
 | T12 | Skill Maker — skills customizadas | T9b | pending |
 | T13 | Compound Learning + Assembly | T11, T12 | pending |
 
-Gates: G1 (após T1), G2 (após T2), G3 (após T9b, antes de T11/T12).
+Gates: G1 (após T1) ✓ aprovado, G2 (após T2) ✓ aprovado, G3 (após T9b, antes de T11/T12) — pendente.
+
+## BUILD Wave A — merge-back concluído
+Todos os 7 worktrees commitados e mesclados em `master` (commits d0c18dc..95f8d0c). Defeitos de
+integração entre agentes encontrados e corrigidos no merge-back (ver commit 95f8d0c):
+tenantName ausente na sessão (2 declarações de tipo conflitantes), scripts dev/build/start não
+carregando .env da raiz do monorepo, bug de fuso horário em `daysUntil()`, divergência de
+comportamento em `suggestFefoBatches()` entre o teste do backend e o oracle do QA (reconciliado a
+favor do QA). Verificado: `npm run build` verde (46 rotas de API + 28 páginas), 59 testes de
+unidade verdes, suíte de testes do QA (`tests/unit`) genuinamente verde, `tests/` typecheck limpo.
+Não verificado (falta Docker neste ambiente): boot real contra Postgres/Redis, testes de
+integração/e2e do QA, `docker build`/`docker compose up`.
