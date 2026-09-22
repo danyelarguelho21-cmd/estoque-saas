@@ -13,8 +13,8 @@
 | T9a | SRE — SLO definitions | T2 | completed (agent a5eea49c3cff33d37, worktree) |
 | T4b | DevOps — build/push containers | T3a, T4a | superseded (validado manualmente via Docker real nesta sessão) |
 | T5b | QA Engineer — implement tests | T3a, T3b, T5a | completed (agent a8e60567ffdc5b706, main tree — Docker real stack: 50/55 vitest + 7/8 e2e passando, 2 bugs reais achados e reportados, 0 fraqueza de oracle) |
-| T6c | Security Engineer — code audit + dep scan | T3a, T3b, T6a | in_progress (agent ad8fa8a2fa5905714, worktree) |
-| T6d | Code Reviewer — actual review | T3a, T3b, T6b | in_progress (agent a467395d59307a6d9, worktree) |
+| T6c | Security Engineer — code audit + dep scan | T3a, T3b, T6a | completed (agent ad8fa8a2fa5905714, worktree — pending merge) |
+| T6d | Code Reviewer — actual review | T3a, T3b, T6b | completed (agent a467395d59307a6d9, worktree — pending merge) |
 | T7 | DevOps — IaC + CI/CD | T5b, T6c, T6d | pending |
 | T8 | Remediation — HARDEN fixes | T5b, T6c, T6d | pending |
 | T9b | SRE — chaos + capacity | T7, T8, T9a | pending |
