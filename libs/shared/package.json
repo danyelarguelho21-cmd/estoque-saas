@@ -7,6 +7,7 @@
   "scripts": {
     "prisma:generate": "dotenv -e ../../.env -- prisma generate --schema prisma/schema.prisma",
     "prisma:migrate": "dotenv -e ../../.env -- prisma migrate dev --schema prisma/schema.prisma",
+    "prisma:migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy --schema prisma/schema.prisma",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

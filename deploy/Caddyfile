@@ -1,0 +1,29 @@
+# deploy/Caddyfile — reverse proxy + TLS automático (Let's Encrypt) na frente do serviço `app`.
+# Montado read-only pelo serviço `caddy` em docker-compose.prod.yml. Sintaxe: Caddyfile (Caddy 2).
+#
+# DOMAIN e TLS_EMAIL vêm de .env (ver docker-compose.prod.yml e .env.example). Com um domínio
+# público real, o Caddy emite/renova o certificado automaticamente na primeira requisição — nada
+# além disto é necessário (sem certbot, sem cron de renovação manual).
+
+{
+	email {$TLS_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Health checks ativos do próprio Caddy contra o upstream — além do healthcheck do Docker
+	# Compose (que só reinicia o container `app`), isto faz o Caddy parar de rotear tráfego para
+	# `app` caso /api/healthz comece a falhar sem que o container tenha morrido (ex.: build ainda
+	# esquentando o Next.js).
+	reverse_proxy app:3000 {
+		health_uri /api/healthz
+		health_interval 10s
+		health_timeout 5s
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

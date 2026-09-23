@@ -14,6 +14,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "prisma:generate": "npm run prisma:generate --workspace libs/shared",
     "prisma:migrate": "npm run prisma:migrate --workspace libs/shared",
+    "prisma:migrate:deploy": "npm run prisma:migrate:deploy --workspace libs/shared",
     "test:qa:unit": "vitest run --config tests/vitest.config.ts tests/unit",
     "test:qa:integration": "vitest run --config tests/vitest.config.ts tests/integration",
     "test:qa": "vitest run --config tests/vitest.config.ts",
