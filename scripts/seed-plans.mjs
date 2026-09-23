@@ -14,31 +14,29 @@
 
 import { PrismaClient } from "@prisma/client";
 
-const UNLIMITED = 999999999;
-
 const plans = [
   {
     name: "Básico",
-    priceCents: 9900,
-    maxProducts: 500,
+    priceCents: 14990,
+    maxProducts: 100,
     maxUsers: 2,
     maxStores: 1,
     features: { perishableTracking: true, csvImport: true, nfeImport: true },
   },
   {
     name: "Pro",
-    priceCents: 24900,
-    maxProducts: 5000,
+    priceCents: 25000,
+    maxProducts: 500,
     maxUsers: 10,
     maxStores: 3,
     features: { perishableTracking: true, csvImport: true, nfeImport: true, dashboardAdvanced: true },
   },
   {
     name: "Enterprise",
-    priceCents: 0, // sob consulta — cobrança negociada fora do fluxo self-service de /api/auth/signup
-    maxProducts: UNLIMITED,
-    maxUsers: UNLIMITED,
-    maxStores: UNLIMITED,
+    priceCents: 35000,
+    maxProducts: 1000,
+    maxUsers: 20,
+    maxStores: 5,
     features: { perishableTracking: true, csvImport: true, nfeImport: true, dashboardAdvanced: true, prioritySupport: true },
   },
 ];

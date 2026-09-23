@@ -29,7 +29,9 @@ export async function createSubscription(tenantId: string, input: CreateSubscrip
   // uma leitura direta sempre falhava (bug real encontrado testando via Docker; ver comentário em
   // modules/auth/tenant.ts#getTenantWithPlan para o histórico completo). `plans` não é RLS-scoped,
   // platformPrisma continua correto para ele.
-  const tenant = await withTenant(tenantId, (tx) => tx.tenant.findUniqueOrThrow({ where: { id: tenantId } }));
+  const admin = await withTenant(tenantId, (tx) =>
+    tx.user.findFirstOrThrow({ where: { role: "admin" }, orderBy: { createdAt: "asc" } }),
+  );
   const plan = await platformPrisma.plan.findUniqueOrThrow({ where: { id: input.planId } });
 
   return withTenant(tenantId, async (tx) => {
@@ -43,12 +45,21 @@ export async function createSubscription(tenantId: string, input: CreateSubscrip
         throw new PaymentRequiredError("cardToken é obrigatório para pagamento via cartão.");
       }
       const provider = getPaymentProvider();
-      const result = await provider.createRecurringCardCharge({
-        tenantId,
-        planId: plan.id,
-        cardToken: input.cardToken,
-        customerEmail: tenant.name,
-      });
+      let result;
+      try {
+        result = await provider.createRecurringCardCharge({
+          tenantId,
+          planId: plan.id,
+          cardToken: input.cardToken,
+          customerEmail: admin.email,
+        });
+      } catch (err) {
+        const gatewayStatus = (err as { status?: unknown } | null)?.status;
+        if (gatewayStatus === 400 || gatewayStatus === 402 || gatewayStatus === 422) {
+          throw new PaymentRequiredError("Pagamento não aprovado. Confira os dados do cartão ou tente outro método de pagamento.");
+        }
+        throw err;
+      }
       if (result.status === "failed") {
         throw new PaymentRequiredError("Pagamento recusado pela operadora de cartão.");
       }

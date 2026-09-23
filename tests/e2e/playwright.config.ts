@@ -4,6 +4,36 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
+const TEST_APP_URL = "http://127.0.0.1:3100";
+
+function assertIsolatedTestDatabase(value: string, variableName: string): string {
+  const url = new URL(value);
+  const databaseName = url.pathname.replace(/^\//, "");
+  if (url.protocol !== "postgresql:" || !["localhost", "127.0.0.1", "::1"].includes(url.hostname) || databaseName !== "estoque_saas_test") {
+    throw new Error(
+      `[e2e] REFUSING to run: ${variableName} must point to the local isolated database ` +
+        `"estoque_saas_test" (tests/integration/docker-compose.test.yml); received host=${url.hostname}, database=${databaseName}.`,
+    );
+  }
+  return value;
+}
+
+const databaseUrl = assertIsolatedTestDatabase(
+  process.env.TEST_DATABASE_URL ?? "postgresql://estoque_app:devpassword@localhost:5433/estoque_saas_test",
+  "TEST_DATABASE_URL",
+);
+const appDatabaseUrl = assertIsolatedTestDatabase(
+  process.env.TEST_APP_DATABASE_URL ?? "postgresql://app_user:devpassword-app-user@localhost:5433/estoque_saas_test",
+  "TEST_APP_DATABASE_URL",
+);
+const platformAdminDatabaseUrl = assertIsolatedTestDatabase(
+  process.env.TEST_PLATFORM_ADMIN_DATABASE_URL ?? "postgresql://platform_admin_role:devpassword-platform-admin@localhost:5433/estoque_saas_test",
+  "TEST_PLATFORM_ADMIN_DATABASE_URL",
+);
+const redisUrl = new URL(process.env.TEST_REDIS_URL ?? "redis://localhost:6380");
+if (redisUrl.protocol !== "redis:" || !["localhost", "127.0.0.1", "::1"].includes(redisUrl.hostname) || redisUrl.port !== "6380") {
+  throw new Error(`[e2e] REFUSING to run: TEST_REDIS_URL must point to local test Redis on port 6380; received ${redisUrl.host}.`);
+}
 
 // QA-owned Playwright config (loop-protocol Rule 4 — tests/ and its runner config are the
 // oracle of record; engineers build against it, never weaken it).
@@ -16,17 +46,11 @@ const REPO_ROOT = path.resolve(__dirname, "../..");
 // containers so `ui/flows/*.spec.ts` exercise the actual full stack, not a mock — required for
 // boundary-safety Pattern 5 (full user journeys, not just individual endpoint responses).
 //
-// WAVE B (real Docker stack available): default target is now the ALREADY-RUNNING
-// `docker compose up -d` stack (app on :3000, migrated + role-granted Postgres on :5432) instead
-// of trying to boot a second `next dev` on :3100 against a separate/never-migrated test DB —
-// avoids a port collision with the app container and avoids a webServer env that was missing
-// APP_DATABASE_URL/PLATFORM_ADMIN_DATABASE_URL entirely (the app would have silently fallen back
-// to the admin/superuser DB connection at runtime — RLS bypassed, see libs/shared/src/db/client.ts
-// — had this config's `command` ever actually been exercised). `reuseExistingServer: true`
-// unconditionally: CI environments that DO want an isolated ephemeral stack should set
-// TEST_BASE_URL to a real booted instance rather than relying on this config to boot one, since a
-// correctly-configured boot needs the same role/grant setup `docker compose up` already performs
-// (see Makefile `migrate` target) — a bare `next dev` cannot reproduce that.
+// E2E is intentionally isolated from the persistent dev/prod stack. It always launches its own
+// Next.js process on port 3100 with local test-only Postgres (5433) and Redis (6380). It never
+// reuses an existing server or accepts an external base URL, since either could write tenants to
+// a database whose identity this config cannot verify. Bring up the test dependencies and apply
+// the test migrations/seeds before running the suite.
 export default defineConfig({
   testDir: __dirname,
   testMatch: ["**/*.spec.ts", "**/*.e2e.ts"],
@@ -36,7 +60,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [["default"], ["junit", { outputFile: "tests/coverage/junit-playwright.xml" }]] : "list",
   use: {
-    baseURL: process.env.TEST_BASE_URL ?? "http://localhost:3000",
+    baseURL: TEST_APP_URL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -45,18 +69,18 @@ export default defineConfig({
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: {
-    command: "npm run dev --workspace services/app -- -p 3000",
+    command: "npm run dev --workspace services/app -- -p 3100",
     cwd: REPO_ROOT,
-    url: (process.env.TEST_BASE_URL ?? "http://localhost:3000") + "/api/healthz",
-    reuseExistingServer: true,
+    url: TEST_APP_URL + "/api/healthz",
+    reuseExistingServer: false,
     timeout: 60_000,
     env: {
-      DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgresql://estoque_app:devpassword@localhost:5432/estoque_saas",
-      APP_DATABASE_URL: process.env.TEST_APP_DATABASE_URL ?? "postgresql://app_user:devpassword-app-user@localhost:5432/estoque_saas",
-      PLATFORM_ADMIN_DATABASE_URL: process.env.TEST_PLATFORM_ADMIN_DATABASE_URL ?? "postgresql://platform_admin_role:devpassword-platform-admin@localhost:5432/estoque_saas",
-      REDIS_URL: process.env.TEST_REDIS_URL ?? "redis://localhost:6379",
+      DATABASE_URL: databaseUrl,
+      APP_DATABASE_URL: appDatabaseUrl,
+      PLATFORM_ADMIN_DATABASE_URL: platformAdminDatabaseUrl,
+      REDIS_URL: redisUrl.toString(),
       AUTH_SECRET: "test-secret-not-for-production-0123456789",
-      AUTH_URL: "http://localhost:3000",
+      AUTH_URL: TEST_APP_URL,
     },
   },
 });

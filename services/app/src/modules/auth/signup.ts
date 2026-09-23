@@ -48,6 +48,13 @@ export async function signupTenant(input: SignupInput): Promise<SignupResult> {
           status: "active",
         },
       });
+      await tx.store.create({
+        data: {
+          tenantId,
+          name: "Loja principal",
+          type: "loja",
+        },
+      });
       await tx.subscription.create({
         data: {
           tenantId,
