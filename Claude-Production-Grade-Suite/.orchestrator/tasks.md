@@ -17,13 +17,43 @@
 | T6d | Code Reviewer — actual review | T3a, T3b, T6b | completed (agent a467395d59307a6d9, worktree — pending merge) |
 | T7 | DevOps — IaC + CI/CD | T5b, T6c, T6d | completed (agent ad04af8786372e3a3, worktree — merged e212533) |
 | T8 | Remediation — HARDEN fixes | T5b, T6c, T6d | completed (main tree, this session — see receipt below) |
-| T9b | SRE — chaos + capacity | T7, T8, T9a | pending |
+| T9b | SRE — chaos + capacity | T7, T8, T9a | completed (agent af5d8ebb14e9ffedf, worktree — merged 8881b7a) |
 | T10 | Data Scientist (conditional — não aplicável, sem LLM/ML) | T7, T8 | skipped |
 | T11 | Technical Writer — docs | T9b | pending |
 | T12 | Skill Maker — skills customizadas | T9b | pending |
 | T13 | Compound Learning + Assembly | T11, T12 | pending |
 
-Gates: G1 (após T1) ✓ aprovado, G2 (após T2) ✓ aprovado, G3 (após T9b, antes de T11/T12) — pendente.
+Gates: G1 (após T1) ✓ aprovado, G2 (após T2) ✓ aprovado, G3 (após T9b, antes de T11/T12) — pronto para apresentação.
+
+## SHIP — T7 (DevOps) + T9b (SRE) concluídos
+
+- **T7** (agent ad04af8786372e3a3, worktree, merge b5e0c05): overlay `docker-compose.prod.yml` com
+  Caddy (reverse proxy + TLS automático via Let's Encrypt), scripts de backup/restore do Postgres,
+  script de rotação de segredos, workflow `.github/workflows/cd-production.yml` (build+push GHCR +
+  deploy via SSH + smoke test em `/api/healthz`/`/api/readyz`), orientação de log shipping (Vector,
+  documentado não habilitado por padrão). Sem cloud provider/Kubernetes/Terraform — mantido dentro
+  da decisão já tomada (VPS único via Docker Compose, ADR-003/c4-container.md). Validado localmente
+  (`docker compose config`, lint de YAML/shell); certificado TLS real e deploy SSH real não
+  verificados (precisam de VPS real).
+- **T9b** (agent af5d8ebb14e9ffedf, worktree, merge 8881b7a): revisão de prontidão de produção
+  re-verificada contra o código atual (não confiou na alegação do tasks.md — conferiu
+  `pg_advisory_xact_lock`, `DEFAULT_JOB_OPTIONS`, `AbortSignal.timeout`, `updateMany` atômico e o
+  chown do Dockerfile diretamente no código-fonte). 3 novos achados High de prontidão: sem
+  tratamento de SIGTERM/graceful shutdown, sem dimensionamento de connection pool do Postgres,
+  zero limites de recursos nos containers. 6 cenários de chaos engineering + playbook de game day
+  (crash do worker, exaustão de conexões do Postgres, Redis indisponível, flood/duplicação de
+  webhook do PagBank, disco cheio no VPS — o mesmo tipo de incidente real que ocorreu nesta sessão
+  — e contenção do lock de estoque em SKU quente). Análise de capacidade aponta o connection pool
+  do Postgres como gargalo #1 na escala 1x; achado mais acionável: o advisory lock do CR-1 sem
+  `lock_timeout` configurado pode encadear em exaustão de conexões sob contenção. 4 novos runbooks
+  fechando lacunas que `alerting-thresholds.md` já sinalizava como faltantes.
+
+**Achados High de prontidão ainda em aberto (não corrigidos nesta passada — para decisão do
+usuário no Gate 3):** falta de SIGTERM/graceful shutdown no app/worker, sem `connection_limit`
+configurado no Prisma, sem limites de recursos (`mem_limit`/`cpus`) nos serviços Docker. Nenhum é
+um bug funcional (nada quebrado hoje) — são gaps de robustez operacional sob carga/restart, com
+runbooks de mitigação já escritos. `sre/capacity/scaling-configs.yaml` tem os valores concretos
+recomendados caso o usuário opte por fechá-los antes do Gate 3.
 
 ## BUILD Wave A — merge-back concluído
 Todos os 7 worktrees commitados e mesclados em `master` (commits d0c18dc..95f8d0c). Defeitos de
