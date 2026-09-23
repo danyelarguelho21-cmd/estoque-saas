@@ -19,11 +19,28 @@
 | T8 | Remediation — HARDEN fixes | T5b, T6c, T6d | completed (main tree, this session — see receipt below) |
 | T9b | SRE — chaos + capacity | T7, T8, T9a | completed (agent af5d8ebb14e9ffedf, worktree — merged 8881b7a) |
 | T10 | Data Scientist (conditional — não aplicável, sem LLM/ML) | T7, T8 | skipped |
-| T11 | Technical Writer — docs | T9b | pending |
-| T12 | Skill Maker — skills customizadas | T9b | pending |
-| T13 | Compound Learning + Assembly | T11, T12 | pending |
+| T11 | Technical Writer — docs | T9b | completed (agent a9cee08f2c1934d34, worktree — merged f08cd69) |
+| T12 | Skill Maker — skills customizadas | T9b | completed (agent af267d01ea3a32e76, worktree — merged 5d724f0) |
+| T13 | Compound Learning + Assembly | T11, T12 | completed (main tree, esta sessão) |
 
-Gates: G1 (após T1) ✓ aprovado, G2 (após T2) ✓ aprovado, G3 (após T9b, antes de T11/T12) — pronto para apresentação.
+Gates: G1 (após T1) ✓ aprovado, G2 (após T2) ✓ aprovado, G3 (após T9b, antes de T11/T12) ✓ aprovado.
+
+## SUSTAIN — T11 (Technical Writer) + T12 (Skill Maker) + T13 concluídos
+
+- **T11**: 13 docs novos + README atualizado (`docs/api/` — 53 endpoints em 8 domínios;
+  `docs/guides/developer-guide.md` + `contributing.md`; `docs/operations/README.md`;
+  `docs/architecture/overview.md`). Sinalizou 2 divergências reais entre documentação/ADR e
+  implementação em vez de repeti-las sem checar: `FileStorage` só tem a implementação local (S3 do
+  ADR-005 é extensão documentada, não construída); a regra de fronteira de módulos do ADR-001 é
+  aplicada por convenção/revisão, não por lint (`eslint.config.js` não tem regra de import-boundary).
+- **T12**: 4 skills específicas do projeto em `.claude/skills/` — `stock-operation-scaffold`,
+  `api-route-scaffold`, `test-harness-health-check`, `local-dev-stack-bootstrap`. Cada uma
+  ancorada em padrão real ou classe de bug que esta sessão efetivamente encontrou (não
+  templates genéricos).
+- **T13**: `compound-learnings.md` escrito (`.orchestrator/`), diretiva "Production Grade Native"
+  criada em `CLAUDE.md` (raiz do projeto, não existia antes). Integração de código: não aplicável —
+  este projeto sempre escreveu direto na raiz do repo (nunca houve modelo de staging em
+  `Claude-Production-Grade-Suite/`), então não há "cópia final" a fazer.
 
 ## SHIP — T7 (DevOps) + T9b (SRE) concluídos
 
