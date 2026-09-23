@@ -117,3 +117,37 @@ executando `docker build`/`docker compose up`/o workflow real do GitHub Actions*
 `UNVERIFIED`. `npm run typecheck --workspaces --if-present` e `npm run lint --workspaces
 --if-present` (oracle rápido) foram executados após as edições, já que nenhuma mudança desta
 passada altera código-fonte da aplicação (só Dockerfile-adjacentes/CI/docs).
+
+## Atualização — passada SHIP (T7, DevOps)
+
+Os 6 itens listados acima em "O que falta para um deploy real em VPS" foram resolvidos nesta
+passada (`/api/healthz` e `/api/readyz` também já existem agora, implementados na fase BUILD —
+o gap registrado na seção anterior está fechado). Implementação completa e detalhes de verificação
+em **[`production-deployment.md`](./production-deployment.md)**; resumo:
+
+1. **Reverse proxy + TLS** — `docker-compose.prod.yml` (overlay) + `deploy/Caddyfile`. Caddy
+   confirmado como escolha (TLS automático via Let's Encrypt, config mínima).
+2. **Backup do Postgres** — `scripts/backup-postgres.sh`/`restore-postgres.sh`, pensado para cron
+   do host (não mais um container sempre-ativo no Compose).
+3. **Segredos em produção** — `scripts/rotate-secrets.sh` (gera valores + documenta ordem de
+   rotação sem downtime); decisão de manter `.env` local ao host (chmod 600) confirmada, sem cofre
+   dedicado.
+4. **CD** — `.github/workflows/cd-production.yml` (build+push no GHCR para auditoria/rollback,
+   deploy via SSH com `scripts/deploy.sh`, smoke test pós-deploy em `/api/healthz`/`/api/readyz`).
+   Rolling restart simples, confirmado suficiente para a escala atual — sem blue-green/canário.
+5. **Monitoramento** — apenas hook de infraestrutura registrado (onde um futuro `/api/metrics`
+   viveria); SLOs/alerting/runbooks continuam fora do escopo de DevOps (autoridade de SRE, T9).
+6. **Log shipping** — `deploy/vector.toml.example`, não habilitado por padrão (sem destino de
+   agregação escolhido pelo time ainda).
+
+Também foi necessário adicionar `prisma:migrate:deploy` (`prisma migrate deploy`, não-interativo)
+em `package.json`/`libs/shared/package.json` — `prisma:migrate` (`migrate dev`) existente é
+correto para desenvolvimento local (`make migrate`), mas não é seguro para produção/CI (pode
+promptear por nome de migração em caso de drift). O CD usa o novo script; `make migrate` local
+continua inalterado.
+
+Docker e `docker compose` **estavam disponíveis** neste ambiente de execução (diferente da passada
+anterior) — `docker compose config` foi executado de fato contra o overlay novo. Ver
+`production-deployment.md`, seção "Verificação desta passada", para o que foi validado por
+execução real vs. o que ainda depende de um VPS real (emissão de certificado TLS real, deploy SSH
+de ponta a ponta).

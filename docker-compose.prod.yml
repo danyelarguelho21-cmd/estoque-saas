@@ -1,0 +1,61 @@
+# Overlay de produção — usar SEMPRE em conjunto com docker-compose.yml, nunca sozinho:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Adiciona o que docker-compose.yml deliberadamente não inclui (ver
+# docs/architecture/system-diagrams/c4-container.md: "atrás de um reverse proxy/TLS, fora do
+# escopo desta arquitetura de aplicação — tratado no SHIP" e docs/architecture/deployment-notes.md,
+# seção "O que falta para um deploy real em VPS"):
+#   - Caddy como reverse proxy com TLS automático (Let's Encrypt) na frente do serviço `app`
+#   - remove a publicação direta da porta 3000 no host — em produção só o Caddy fica exposto
+#     publicamente (80/443); `app` continua acessível internamente via `app:3000` na mesma rede
+#     Docker (Caddy e `app` compartilham a rede default do projeto Compose, sem configuração extra)
+#
+# Continua sendo um VPS único via Docker Compose (ADR-001) — nenhuma dependência de nuvem
+# específica adicionada aqui. Backup do Postgres e rotação de segredos são tratados por scripts
+# fora do Compose (scripts/backup-postgres.sh, scripts/rotate-secrets.sh) — ver
+# docs/architecture/production-deployment.md para a razão de não terem virado mais um serviço
+# sempre-ativo aqui (evita duplicar credenciais de banco em outro container e é mais simples de
+# auditar como um cron do host).
+
+services:
+  app:
+    # !override substitui a lista inteira (por padrão o Compose CONCATENA listas entre arquivos —
+    # sem !override a porta 3000 continuaria publicada em 0.0.0.0 além desta entrada, validado com
+    # `docker compose config` nesta revisão). Sem porta publicada: só alcançável via `caddy` (rede
+    # interna) ou por quem tiver acesso SSH ao host (docker compose exec/logs).
+    ports: !override []
+
+  caddy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    environment:
+      # Domínio público e e-mail para emissão automática de certificado Let's Encrypt (ACME) —
+      # ver deploy/Caddyfile e docs/architecture/production-deployment.md. Sem DOMAIN definido em
+      # .env, cai no default "localhost" (TLS interno self-signed do próprio Caddy — adequado só
+      # para testar o overlay localmente, nunca para produção real).
+      DOMAIN: ${DOMAIN:-localhost}
+      TLS_EMAIL: ${TLS_EMAIL:-admin@example.com}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3 (QUIC) — opcional, Caddy negocia HTTP/2 se UDP/443 estiver bloqueado
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificados emitidos (persistente — evita re-emitir a cada restart)
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      # Admin API do Caddy escuta em 127.0.0.1:2019 dentro do container por padrão — não expõe
+      # nada além do já publicado em 80/443. wget é o busybox da imagem alpine (mesma lógica do
+      # healthcheck de `app`, que usa wget contra node:24-alpine).
+      test: ["CMD", "wget", "-qO-", "http://localhost:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  caddy_data:
+  caddy_config:

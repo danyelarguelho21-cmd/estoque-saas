@@ -1,0 +1,138 @@
+# CD — deploy para produção (VPS único via Docker Compose, ver ADR-001 e
+# docs/architecture/system-diagrams/c4-container.md). Nenhuma dependência de nuvem específica
+# (AWS/GCP/Azure), Kubernetes ou Terraform envolvida aqui — decisão de arquitetura já tomada.
+#
+# Dispara depois que o workflow CI (.github/workflows/ci.yml) termina com sucesso na branch main,
+# ou manualmente via workflow_dispatch. Dois jobs sequenciais + smoke test:
+#   1. build-and-push — builda a imagem e publica no GHCR SOMENTE como trilha de auditoria/
+#      rollback manual (`docker pull ghcr.io/<repo>-app:<sha>` para inspecionar ou rodar uma
+#      imagem antiga fora do VPS). NÃO é a imagem que roda em produção.
+#   2. deploy — conecta via SSH no VPS e roda scripts/deploy.sh, que builda a imagem localmente a
+#      partir do commit sincronizado por `git pull` (rolling restart via `docker compose up -d
+#      --build`, per docs/architecture/deployment-notes.md — blue-green/canário seriam
+#      over-engineering nesta escala, ADR-001).
+#   3. smoke-test — confere /api/healthz e /api/readyz no domínio público pós-deploy.
+#
+# Segredos necessários (Settings > Secrets and variables > Actions, ou no Environment
+# "production" se configurado com approval manual — ver docs/architecture/production-deployment.md):
+#   VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_DEPLOY_DIR, PRODUCTION_BASE_URL
+#
+# Versões de actions verificadas via WebSearch em 2026-09-22 (freshness protocol, Tier 2 — "CI/CD
+# platform syntax"): actions/checkout@v7 (já usado em ci.yml), docker/setup-buildx-action@v4,
+# docker/login-action@v4, docker/build-push-action@v7, appleboy/ssh-action@v1 são as major tags
+# atuais no momento desta revisão.
+
+name: CD Production
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Ref (branch/tag/sha) a implantar"
+        required: false
+        default: main
+
+concurrency:
+  group: cd-production
+  cancel-in-progress: false # nunca cancelar um deploy em andamento no meio do caminho
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}-app
+
+jobs:
+  build-and-push:
+    name: Build & Push (auditoria/rollback)
+    runs-on: ubuntu-latest
+    # workflow_dispatch sempre roda; workflow_run só segue se o CI concluiu com sucesso.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ref: ${{ steps.resolve-ref.outputs.ref }}
+    steps:
+      - name: Resolve ref a implantar
+        id: resolve-ref
+        run: echo "ref=${{ github.event.inputs.ref || github.event.workflow_run.head_sha || 'main' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.resolve-ref.outputs.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push (cache only — não é a imagem que roda no VPS, ver cabeçalho do arquivo)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: services/app/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: production # opcional: configure em Settings > Environments para exigir approval manual
+    steps:
+      - name: Deploy via SSH (git pull + docker compose up -d --build)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          envs: DEPLOY_REF
+          script: |
+            cd "${{ secrets.VPS_DEPLOY_DIR }}"
+            ./scripts/deploy.sh
+        env:
+          DEPLOY_REF: ${{ needs.build-and-push.outputs.ref }}
+
+  smoke-test:
+    name: Post-deploy smoke test
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Checar /api/healthz e /api/readyz
+        env:
+          BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+        run: |
+          set -euo pipefail
+
+          check() {
+            path="$1"
+            attempt=1
+            while [ "$attempt" -le 10 ]; do
+              status=$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}${path}" || echo "000")
+              if [ "$status" = "200" ]; then
+                echo "OK: ${path} -> $status (tentativa $attempt)"
+                return 0
+              fi
+              echo "aguardando ${path}... (tentativa $attempt, status=$status)"
+              sleep 6
+              attempt=$((attempt + 1))
+            done
+            echo "FALHOU: ${path} nunca respondeu 200 depois de 10 tentativas" >&2
+            return 1
+          }
+
+          check /api/healthz
+          check /api/readyz

@@ -1,0 +1,54 @@
+# deploy/vector.toml.example — configuração de exemplo do Vector (https://vector.dev) para
+# encaminhar os logs dos containers (stdout, hoje texto simples na maioria dos serviços — ver
+# nota abaixo) para um agregador externo.
+#
+# NÃO está habilitado por padrão — nenhum serviço "vector" existe em docker-compose.prod.yml. Este
+# arquivo é um ponto de partida documentado, não uma stack de observabilidade completa (isso é
+# decisão de uma passada futura de SRE/DevOps dedicada — ver
+# docs/architecture/production-deployment.md, seção "Log shipping"). Motivo de não sair habilitado
+# por padrão: sem acesso SSH constante ao VPS assumido no discovery (ver deployment-notes.md), mas
+# sem um destino de agregação já escolhido pelo time nesta fase, mais um container sempre-ativo
+# seria over-engineering — ativar quando houver um destino real (Loki, Datadog, Axiom, etc).
+#
+# Para habilitar:
+#   1. Copie este arquivo para deploy/vector.toml e preencha LOG_AGGREGATOR_URL (ou troque o sink
+#      abaixo pelo tipo do seu destino — ver https://vector.dev/docs/reference/configuration/sinks/)
+#   2. Adicione a docker-compose.prod.yml:
+#        vector:
+#          image: timberio/vector:0.53.0-alpine   # confira a tag estável mais recente antes de usar
+#          restart: unless-stopped
+#          environment:
+#            LOG_AGGREGATOR_URL: ${LOG_AGGREGATOR_URL}
+#          volumes:
+#            - ./deploy/vector.toml:/etc/vector/vector.toml:ro
+#            - /var/run/docker.sock:/var/run/docker.sock:ro
+#   3. docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d vector
+
+[sources.docker_logs]
+type = "docker_logs"
+docker_host = "unix:///var/run/docker.sock"
+# Sem include_containers: coleta de todos os containers do host. Em um VPS dedicado ao
+# estoque-saas isso já é, na prática, só os serviços deste projeto (app, worker, postgres, redis,
+# caddy) — ajuste com include_containers/exclude_containers se o VPS tiver outras cargas.
+
+[transforms.parse_json]
+type = "remap"
+inputs = ["docker_logs"]
+# Os serviços da aplicação (app/worker) hoje logam texto simples via console.log/console.error —
+# não há ainda logging estruturado em JSON (isso é responsabilidade de software-engineer/BUILD).
+# parse_json aqui é defensivo: tenta parsear como JSON quando aplicável (ex.: log JSON do próprio
+# Caddy, ver deploy/Caddyfile) e mantém a mensagem original como texto quando não é JSON válido.
+source = '''
+parsed, err = parse_json(.message)
+if err == null {
+  . = merge(., object!(parsed), deep: true)
+}
+'''
+
+# Exemplo de sink — troque pelo tipo do seu destino (Loki, Datadog, Elasticsearch, HTTP genérico
+# etc). Documentação de sinks: https://vector.dev/docs/reference/configuration/sinks/
+[sinks.aggregator]
+type = "http"
+inputs = ["parse_json"]
+uri = "${LOG_AGGREGATOR_URL}"
+encoding.codec = "json"
