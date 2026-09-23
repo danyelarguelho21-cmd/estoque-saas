@@ -15,7 +15,7 @@
 | T5b | QA Engineer — implement tests | T3a, T3b, T5a | completed (agent a8e60567ffdc5b706, main tree — Docker real stack: 50/55 vitest + 7/8 e2e passando, 2 bugs reais achados e reportados, 0 fraqueza de oracle) |
 | T6c | Security Engineer — code audit + dep scan | T3a, T3b, T6a | completed (agent ad8fa8a2fa5905714, worktree — pending merge) |
 | T6d | Code Reviewer — actual review | T3a, T3b, T6b | completed (agent a467395d59307a6d9, worktree — pending merge) |
-| T7 | DevOps — IaC + CI/CD | T5b, T6c, T6d | pending |
+| T7 | DevOps — IaC + CI/CD | T5b, T6c, T6d | completed (agent ad04af8786372e3a3, worktree — merged e212533) |
 | T8 | Remediation — HARDEN fixes | T5b, T6c, T6d | completed (main tree, this session — see receipt below) |
 | T9b | SRE — chaos + capacity | T7, T8, T9a | pending |
 | T10 | Data Scientist (conditional — não aplicável, sem LLM/ML) | T7, T8 | skipped |
