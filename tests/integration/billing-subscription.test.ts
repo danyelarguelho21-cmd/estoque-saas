@@ -24,8 +24,9 @@ import { randomUUID } from "node:crypto";
 import { Queue } from "bullmq";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
-import { adminClient, resetTestDatabase, seedPlan } from "../fixtures/db-test-helpers";
+import { adminClient, resetTestDatabase, seedPlan, seedTenant, seedUser } from "../fixtures/db-test-helpers";
 import { signUpAndLogin } from "../fixtures/http-test-client";
+import { generateMonthlyCharges } from "@/modules/billing";
 
 const TEST_REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://localhost:6380";
 
@@ -147,9 +148,13 @@ describe("Pix/boleto subscription checkout generates the first invoice automatic
 
       // Poll for the job to be processed (completed OR failed — either is a clean outcome here,
       // since PAGBANK_API_KEY=dev-placeholder cannot authenticate against the real sandbox).
+      // Generous window: generateMonthlyCharges() now correctly processes EVERY due tenant
+      // (per-tenant isolation fix, see the test below) rather than aborting on the first one, and
+      // this suite's earlier tests have by now signed up several tenants that are ALSO due — each
+      // gets its own real (failing) PagBank round-trip before this job settles.
       let attempts = 0;
       let settled = false;
-      while (!settled && attempts < 40) {
+      while (!settled && attempts < 200) {
         const counts = await jobQueue.getJobCounts("waiting", "active");
         if (counts.waiting === 0 && counts.active === 0) settled = true;
         else await new Promise((r) => setTimeout(r, 250));
@@ -162,6 +167,49 @@ describe("Pix/boleto subscription checkout generates the first invoice automatic
       // invoices here proves there's no partial/corrupt state, not that billing succeeded.
       expect(await invoiceCount(db, tenantId)).toBe(0);
     },
-    20_000,
+    60_000,
   );
+
+  // Closes a SECOND real bug found live while verifying the first fix (with real PagBank sandbox
+  // credentials this time): generateMonthlyCharges()'s per-tenant loop had NO error isolation — a
+  // single tenant whose charge attempt throws (a genuinely invalid CNPJ PagBank's real validation
+  // rejects, in the case that surfaced this) aborted the ENTIRE job. Since BullMQ's retry just
+  // re-runs the same job (hitting the SAME first-in-iteration-order failing tenant again), this
+  // meant NO tenant's invoice — not just the broken one's — would EVER generate again, silently,
+  // until someone happened to notice and fix that one tenant's data. Fixed with a try/catch
+  // around each tenant inside the loop (monthly-charge.ts).
+  it("one tenant's charge-generation failure does not block generating (or attempting) charges for OTHER due tenants", async () => {
+    const admin = adminClient();
+    await admin.connect();
+    try {
+      const tenantA = await seedTenant(admin, planId, { name: "Tenant que vai falhar" });
+      await seedUser(admin, tenantA.id, { role: "admin", email: `admin-a-${randomUUID()}@example.com` });
+      const tenantB = await seedTenant(admin, planId, { name: "Tenant que deve continuar sendo processado" });
+      await seedUser(admin, tenantB.id, { role: "admin", email: `admin-b-${randomUUID()}@example.com` });
+
+      // Both due (pix_boleto, active, no period set yet) — same shape createSubscription()
+      // produces at checkout.
+      for (const tenant of [tenantA, tenantB]) {
+        await admin.query(
+          `INSERT INTO subscriptions (id, tenant_id, plan_id, status, payment_method)
+           VALUES ($1, $2, $3, 'active', 'pix_boleto')`,
+          [randomUUID(), tenant.id, planId],
+        );
+      }
+
+      // Neither tenant has real PagBank credentials in this test environment (PAGBANK_API_KEY is
+      // a placeholder), so BOTH calls fail — that's fine and expected here. The bug this test
+      // guards against is specifically whether tenant B is even ATTEMPTED after tenant A fails,
+      // not whether the charge succeeds (that's PagBank sandbox availability, out of this test's
+      // control — see the WORKER-DEPENDENT test above for that same honest boundary).
+      const result = await generateMonthlyCharges();
+
+      // The bug: without isolation, this whole call would throw and neither tenant would be
+      // reflected in a clean result at all. With isolation, every due tenant gets a counted
+      // outcome — this is what "tenant B wasn't silently skipped" looks like from the outside.
+      expect(result.generated + result.skipped + result.failed).toBeGreaterThanOrEqual(2);
+    } finally {
+      await admin.end();
+    }
+  });
 });

@@ -21,6 +21,13 @@ export interface OneOffChargeInput {
   dueDate: string; // ISO date
   method: "pix" | "boleto";
   customerEmail: string;
+  // BUG FIX (found live: every real pix/boleto charge attempt got a real 400 from PagBank —
+  // "customer.tax_id must be a valid CPF or CNPJ" / "customer.name must not contain [@...]" —
+  // the provider used to hardcode tax_id="" and pass the EMAIL as the name field). PagBank's
+  // Orders API requires both on `customer`; the tenant's own name/cnpj (collected at signup,
+  // Tenant.name/Tenant.cnpj) are what these must actually be.
+  customerName: string;
+  customerTaxId: string; // CPF/CNPJ, any formatting — the provider strips non-digits itself
 }
 
 export interface OneOffChargeResult {

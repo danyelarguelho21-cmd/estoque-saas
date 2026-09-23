@@ -49,6 +49,23 @@ function defaultSubscriptionsBaseUrl(ordersBaseUrl: string): string {
     : "https://api.assinaturas.pagseguro.com";
 }
 
+// BUG FIX (found live via a real sandbox call — confirmed against PagBank's actual error
+// response): `customer.tax_id` must be digits-only ("must be a valid CPF or CNPJ" — a formatted
+// value like "12.345.678/0001-90", which is how Tenant.cnpj is stored, is rejected).
+function onlyDigits(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+// BUG FIX (same live call): `customer.name` rejects a fixed set of punctuation characters
+// (PagBank's exact error: "must not contains any of the characters [!, @, #, $, %, ¨, *, (, ),
+// \", ”, \\, |, {, }, [, ], <, >, ;]") — most relevantly `@`, since the caller used to pass
+// an EMAIL ADDRESS as the name. Strips the documented set defensively even now that a real
+// company name is passed, since nothing guarantees a company name never contains e.g. "&" being
+// typed as "and" or similar edge punctuation.
+function sanitizeCustomerName(value: string): string {
+  return value.replace(/[!@#$%¨*()"”\\|{}[\]<>;]/g, "").trim();
+}
+
 interface PagBankApiError extends Error {
   status: number;
   body: unknown;
@@ -149,10 +166,15 @@ export class PagBankProvider implements PaymentProvider {
 
   async createOneOffCharge(input: OneOffChargeInput): Promise<OneOffChargeResult> {
     const base = this.config.baseUrl;
+    const customer = {
+      name: sanitizeCustomerName(input.customerName),
+      email: input.customerEmail,
+      tax_id: onlyDigits(input.customerTaxId),
+    };
     if (input.method === "boleto") {
       const body = {
         reference_id: `tenant-${input.tenantId}-${Date.now()}`,
-        customer: { name: input.customerEmail, email: input.customerEmail, tax_id: "" },
+        customer,
         items: [{ reference_id: "assinatura-mensal", name: "Assinatura estoque-saas", quantity: 1, unit_amount: input.amountCents }],
         charges: [
           {
@@ -180,7 +202,7 @@ export class PagBankProvider implements PaymentProvider {
     // pix: gera QR code ao nível do pedido (Orders "qr_codes")
     const body = {
       reference_id: `tenant-${input.tenantId}-${Date.now()}`,
-      customer: { name: input.customerEmail, email: input.customerEmail, tax_id: "" },
+      customer,
       items: [{ reference_id: "assinatura-mensal", name: "Assinatura estoque-saas", quantity: 1, unit_amount: input.amountCents }],
       qr_codes: [
         {

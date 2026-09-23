@@ -39,7 +39,13 @@ export async function POST(req: Request): Promise<Response> {
     // actually due (see subscriptions.ts's fix in this same pass), so this is safe to enqueue
     // unconditionally: it's a no-op scan for every other tenant, a real first invoice for this one.
     if (input.paymentMethod === "pix_boleto") {
-      await monthlyChargeQueue.add("generate-monthly-charge-immediate", {});
+      try {
+        const job = await monthlyChargeQueue.add("generate-monthly-charge-immediate", {});
+        console.log(`[billing/subscription] enfileirado generate-monthly-charge-immediate (jobId=${job.id}) para tenant ${ctx.tenantId}`);
+      } catch (err) {
+        console.error(`[billing/subscription] FALHA ao enfileirar generate-monthly-charge-immediate para tenant ${ctx.tenantId}:`, err);
+        throw err;
+      }
     }
 
     return created(result);

@@ -37,7 +37,7 @@ const monthlyChargeWorker = new Worker<GenerateMonthlyChargeJobData>(
   QUEUE_NAMES.generateMonthlyCharge,
   async () => {
     const result = await generateMonthlyCharges();
-    console.log(`[worker] generate-monthly-charge: ${result.generated} cobranças geradas, ${result.skipped} tenants sem cobrança pendente.`);
+    console.log(`[worker] generate-monthly-charge: ${result.generated} cobranças geradas, ${result.skipped} tenants sem cobrança pendente, ${result.failed} falharam (ver logs acima).`);
   },
   { connection },
 );
@@ -65,6 +65,29 @@ const importProductsWorker = new Worker<ImportProductsCsvJobData>(
 console.log(`[worker] escutando fila: ${QUEUE_NAMES.importProductsCsv}`);
 
 const allWorkers = [parseNfeWorker, monthlyChargeWorker, expiryAlertsWorker, importProductsWorker];
+
+// BUG FIX (found live: worker showed zero output — success or failure — after "escutando
+// fila", even for jobs that demonstrably ran and threw). BullMQ's Worker emits 'failed' when the
+// processor throws and 'error' for connection/internal errors — with NO listener attached
+// (as it was before this fix, on all 4 Workers), those events are simply swallowed by Node's
+// EventEmitter; nothing is logged, nothing crashes, the job just silently stays failed in Redis.
+// job.failedReason/err.stack is exactly what's needed to see the REAL root cause instead of
+// guessing from silence.
+for (const worker of allWorkers) {
+  worker.on("failed", (job, err) => {
+    console.error(`[worker] job FALHOU na fila "${worker.name}" (jobId=${job?.id ?? "?"}, tentativa ${job?.attemptsMade ?? "?"}):`, err?.message);
+    // PagBankApiError (libs/shared/src/payments/providers/pagbank.ts) carries the gateway's own
+    // field-level validation detail on `.body` — the generic Error.message alone ("PagBank API
+    // respondeu 400...") was not enough to find the real cause here, `.body` was.
+    const body = (err as unknown as { body?: unknown } | undefined)?.body;
+    if (body !== undefined) console.error("[worker]   detalhe do erro (body da resposta):", JSON.stringify(body));
+    if (err?.stack) console.error(err.stack);
+  });
+  worker.on("error", (err) => {
+    console.error(`[worker] erro de conexão/interno na fila "${worker.name}":`, err?.message);
+    if (err?.stack) console.error(err.stack);
+  });
+}
 
 // sre finding (T9b, readiness-review-ship.md §2): sem handler de SIGTERM, um `docker compose
 // stop`/restart de deploy (cd-production.yml) mata o processo direto após o
