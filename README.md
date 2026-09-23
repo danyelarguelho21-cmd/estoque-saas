@@ -6,8 +6,10 @@ brasileiras (varejo, distribuidoras, farmácias, mercados).
 ## Documentação
 
 - **Requisitos (BRD):** [`Claude-Production-Grade-Suite/product-manager/BRD/brd.md`](./Claude-Production-Grade-Suite/product-manager/BRD/brd.md)
-- **Arquitetura (ADRs, diagramas, tech stack):** [`docs/architecture/`](./docs/architecture/)
-- **Contratos de API (OpenAPI 3.1):** [`api/openapi/`](./api/openapi/)
+- **Visão geral de arquitetura:** [`docs/architecture/overview.md`](./docs/architecture/overview.md) — ADRs, diagramas e tech stack completos em [`docs/architecture/`](./docs/architecture/)
+- **Referência de API:** [`docs/api/`](./docs/api/) — contratos completos (OpenAPI 3.1) em [`api/openapi/`](./api/openapi/)
+- **Guia do desenvolvedor:** [`docs/guides/developer-guide.md`](./docs/guides/developer-guide.md) · **Contribuindo:** [`docs/guides/contributing.md`](./docs/guides/contributing.md)
+- **Guia operacional (deploy, backup, segredos, SLOs, runbooks):** [`docs/operations/`](./docs/operations/)
 - **Modelo de dados (ERD + migrações):** [`schemas/`](./schemas/)
 
 ## Stack
@@ -60,5 +62,9 @@ extraível em serviços independentes no futuro, se a escala justificar.
 
 ## Status
 
-Scaffold gerado pelo Solution Architect (fase DEFINE do pipeline production-grade). Implementação
-de regras de negócio, UI e testes é responsabilidade da fase BUILD.
+Produção-pronto: passou pelas fases DEFINE, BUILD, HARDEN e SHIP do pipeline production-grade
+(Gate 3 aprovado) — regras de negócio, UI, testes (unit/integration/e2e/performance), auditoria de
+segurança, revisão de código, deploy em VPS via Docker Compose (Caddy + TLS automático, CD via
+GitHub Actions) e prontidão SRE (SLOs, chaos engineering, runbooks) implementados. Ver
+[`Claude-Production-Grade-Suite/.orchestrator/tasks.md`](./Claude-Production-Grade-Suite/.orchestrator/tasks.md)
+para o histórico completo do pipeline.
