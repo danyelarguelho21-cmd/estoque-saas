@@ -1,5 +1,5 @@
 import { listActiveTenantIds, withTenant, type TenantScopedClient } from "@estoque-saas/shared";
-import { getCurrentStock } from "./balance";
+import { getCurrentStockForProducts } from "./balance";
 
 // Processor do job `scan-expiry-alerts` (worker, repeatable diário) — ADR-006 ponto 4: varre
 // lotes vencendo dentro da janela configurada (stock_alerts_config.expiry_alert_days, default
@@ -58,8 +58,12 @@ async function scanOneTenant(tenantId: string): Promise<number> {
 
     if (!config || config.lowStockAlertEnabled) {
       const products = await tx.product.findMany({ where: { deletedAt: null } });
+      // code-reviewer finding HI-1: was one getCurrentStock query PER product, run once per
+      // active tenant EVERY DAY inside this transaction — now one batched query for the whole
+      // catalog regardless of size.
+      const stockByProduct = await getCurrentStockForProducts(tx, products.map((p) => p.id));
       for (const product of products) {
-        const currentStock = await getCurrentStock(tx, product.id);
+        const currentStock = stockByProduct.get(product.id) ?? 0;
         if (currentStock >= product.minStockGlobal) continue;
         if (await alreadyNotifiedRecently(tx, "low_stock", "productId", product.id)) continue;
 

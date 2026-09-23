@@ -26,7 +26,13 @@ services:
       timeout: 5s
       retries: 10
     tmpfs:
-      - /var/lib/postgresql/data # ephemeral — every test run starts from a clean cluster
+      # postgres:18+ changed its data-layout convention (pg_ctlcluster-compatible, major-version
+      # directory names) — the mount must be at /var/lib/postgresql, not .../data, or the
+      # container crash-loops on boot ("PostgreSQL data in /var/lib/postgresql/data (unused
+      # mount/volume)"). Same fix already applied to the dev stack, see root docker-compose.yml's
+      # postgres service comment. Still tmpfs (ephemeral — every test run starts from a clean
+      # cluster), just mounted one directory up.
+      - /var/lib/postgresql
 
   redis-test:
     image: redis:7-alpine

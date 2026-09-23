@@ -1,6 +1,6 @@
 import type { TenantScopedClient } from "@estoque-saas/shared";
 import { withTenant } from "@estoque-saas/shared";
-import { getCurrentStock } from "./balance";
+import { getCurrentStockForProducts } from "./balance";
 
 export interface LowStockProduct {
   id: string;
@@ -13,22 +13,28 @@ export interface LowStockProduct {
 // Produtos abaixo do estoque mínimo (api/openapi/stock.yaml#listLowStockAlerts). Usa
 // minStockOverride por loja quando storeId é informado e existir override; caso contrário,
 // minStockGlobal do produto (schemas/erd.md — product_store_settings).
+// code-reviewer finding HI-1: was a plain for...of loop doing up to 2 queries PER product
+// (productStoreSetting.findUnique + getCurrentStock), unbounded by catalog size. Now 3 queries
+// total regardless of catalog size: the product list, one batched productStoreSetting lookup,
+// and one batched stock balance lookup (getCurrentStockForProducts).
 export async function listLowStockAlerts(tenantId: string, storeId?: string): Promise<LowStockProduct[]> {
   return withTenant(tenantId, async (tx) => {
     const products = await tx.product.findMany({ where: { deletedAt: null } });
-    const result: LowStockProduct[] = [];
+    const productIds = products.map((p) => p.id);
 
+    const [overrides, stockByProduct] = await Promise.all([
+      storeId
+        ? tx.productStoreSetting.findMany({ where: { productId: { in: productIds }, storeId } })
+        : Promise.resolve([]),
+      getCurrentStockForProducts(tx, productIds, storeId),
+    ]);
+    const overrideByProductId = new Map(overrides.map((o) => [o.productId, o.minStockOverride]));
+
+    const result: LowStockProduct[] = [];
     for (const product of products) {
-      let minStock = product.minStockGlobal;
-      if (storeId) {
-        const override = await tx.productStoreSetting.findUnique({
-          where: { productId_storeId: { productId: product.id, storeId } },
-        });
-        if (override?.minStockOverride !== null && override?.minStockOverride !== undefined) {
-          minStock = override.minStockOverride;
-        }
-      }
-      const currentStock = await getCurrentStock(tx, product.id, storeId);
+      const override = overrideByProductId.get(product.id);
+      const minStock = override !== null && override !== undefined ? override : product.minStockGlobal;
+      const currentStock = stockByProduct.get(product.id) ?? 0;
       if (currentStock < minStock) {
         result.push({ id: product.id, sku: product.sku, name: product.name, currentStock, minStock });
       }

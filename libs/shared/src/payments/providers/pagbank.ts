@@ -54,6 +54,20 @@ interface PagBankApiError extends Error {
   body: unknown;
 }
 
+// code-reviewer finding HI-3: no timeout meant a hung PagBank API could block a request
+// indefinitely — and generate-monthly-charge (billing/monthly-charge.ts) loops over EVERY active
+// tenant sequentially, so one hung call there stalls billing for every tenant queued behind it.
+// 10s is generous for a JSON API call (PagBank has no documented SLA longer than that) while still
+// bounding the worst case; tune against a stated NFR latency budget if one exists.
+const PAGBANK_REQUEST_TIMEOUT_MS = 10_000;
+
+export class PagBankTimeoutError extends Error {
+  constructor(url: string) {
+    super(`PagBank API não respondeu em ${PAGBANK_REQUEST_TIMEOUT_MS}ms para ${url}`);
+    this.name = "PagBankTimeoutError";
+  }
+}
+
 async function pagbankFetch(
   url: string,
   apiKey: string,
@@ -66,11 +80,20 @@ async function pagbankFetch(
       Accept: "application/json",
       "Content-Type": "application/json",
     },
+    signal: AbortSignal.timeout(PAGBANK_REQUEST_TIMEOUT_MS),
   };
   if (init.body !== undefined) {
     requestInit.body = JSON.stringify(init.body);
   }
-  const res = await fetch(url, requestInit);
+  let res: Response;
+  try {
+    res = await fetch(url, requestInit);
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") {
+      throw new PagBankTimeoutError(url);
+    }
+    throw err;
+  }
   const text = await res.text();
   const json: unknown = text.length > 0 ? JSON.parse(text) : {};
   if (!res.ok) {

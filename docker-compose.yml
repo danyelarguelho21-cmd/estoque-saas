@@ -54,8 +54,19 @@ services:
       APP_DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD:-devpassword-app-user}@postgres:5432/estoque_saas
       PLATFORM_ADMIN_DATABASE_URL: postgresql://platform_admin_role:${PLATFORM_ADMIN_DB_PASSWORD:-devpassword-platform-admin}@postgres:5432/estoque_saas
       REDIS_URL: redis://redis:6379
+      # qa-engineer finding C-1: LocalFileStorage's default ("./.data/uploads") is relative to CWD
+      # and resolves under /repo, unwritable by the non-root `app` user (EACCES on every upload).
+      # Absolute path into the volume below, which the Dockerfile chowns to `app` at image-build
+      # time (so the named volume inherits that ownership on its first, empty-volume creation).
+      UPLOADS_DIR: /repo/.data/uploads
     ports:
       - "3000:3000"
+    volumes:
+      # Shared with `worker`: this service writes the upload (POST /api/nfe-imports), the worker's
+      # async parse job (BullMQ, ADR-005) reads the same file by fileRef — without a shared volume
+      # each container has its own ephemeral filesystem and the worker could never see what `app`
+      # wrote, EACCES or not.
+      - uploads_data:/repo/.data/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,6 +89,9 @@ services:
       # Mesma role restrita "app_user" usada pelo processo web — ver comentário no serviço `app`.
       APP_DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD:-devpassword-app-user}@postgres:5432/estoque_saas
       REDIS_URL: redis://redis:6379
+      UPLOADS_DIR: /repo/.data/uploads # ver comentário no serviço `app` — mesmo volume, mesmo path
+    volumes:
+      - uploads_data:/repo/.data/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,3 +111,4 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:

@@ -110,6 +110,48 @@ describe("PagBank webhook idempotency by gateway_event_id (design-principles.md)
     expect(rows[0]?.gateway_event_id).toBe(payload.id);
   }, 15_000);
 
+  // Closes code-reviewer finding HI-4: the original guard was check-then-act (SELECT, branch in
+  // app code, THEN UPDATE) — under READ COMMITTED, two near-simultaneous deliveries of the SAME
+  // event (gateways routinely re-deliver on timeout) could both pass the SELECT before either
+  // committed, and both run the side effects a second time. The prior test above only proves
+  // idempotency for two SEQUENTIAL calls (first fully awaited before the second starts), which
+  // can never exercise that interleaving — this one fires both via Promise.all.
+  it("CONCURRENCY: two truly simultaneous deliveries of the same charge.paid event produce exactly one audit_log entry and one subscription update — not two", async () => {
+    const { tenantId } = await signUpAndLogin(planId);
+    const subscriptionId = await getSubscriptionId(db, tenantId);
+    const chargeId = `chg_${randomUUID().slice(0, 8)}`;
+    await seedPendingInvoice(db, { tenantId, subscriptionId, gatewayChargeId: chargeId });
+
+    const payload = makeRawChargePaidPayload({ chargeId });
+    const rawBody = JSON.stringify(payload);
+    const signature = makeAuthenticityToken(rawBody, WEBHOOK_SECRET);
+
+    const [first, second] = await Promise.all([
+      new ApiClient().post("/api/webhooks/pagbank", payload, { "x-authenticity-token": signature }),
+      new ApiClient().post("/api/webhooks/pagbank", payload, { "x-authenticity-token": signature }),
+    ]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+
+    const { rows: invoiceRows } = await db.query<{ status: string }>(
+      `SELECT status FROM invoices WHERE tenant_id = $1 AND gateway_charge_id = $2`,
+      [tenantId, chargeId],
+    );
+    expect(invoiceRows.length).toBe(1);
+    expect(invoiceRows[0]?.status).toBe("paid");
+
+    // The defect HI-4 describes: invoice.status still converges correctly either way, but the
+    // check-then-act race let the SIDE EFFECTS run twice — a duplicated audit_log entry for the
+    // same invoice update, evidence for billing disputes per ADR-007.
+    const { rows: auditRows } = await db.query<{ count: string }>(
+      `SELECT count(*)::int AS count FROM audit_log WHERE tenant_id = $1 AND entity_type = 'invoice' AND entity_id = (
+         SELECT id FROM invoices WHERE tenant_id = $1 AND gateway_charge_id = $2
+       )`,
+      [tenantId, chargeId],
+    );
+    expect(Number(auditRows[0]?.count)).toBe(1);
+  }, 15_000);
+
   it("a webhook with an invalid/unverifiable signature is rejected (401) and produces no side effect", async () => {
     const { tenantId } = await signUpAndLogin(planId);
     const subscriptionId = await getSubscriptionId(db, tenantId);

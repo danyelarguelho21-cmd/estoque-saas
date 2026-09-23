@@ -20,6 +20,15 @@ FROM base AS runtime
 ENV NODE_ENV=production
 RUN addgroup -S app && adduser -S app -G app
 WORKDIR /repo
+# qa-engineer finding C-1: LocalFileStorage's default UPLOADS_DIR ("./.data/uploads", relative to
+# CWD) resolves under /repo, which this stage's non-root `app` user does not own — every NF-e/CSV
+# upload hit EACCES on mkdir. Pre-create the directory and chown it to `app` BEFORE `USER app` so
+# the ownership is baked into the image layer; docker-compose.yml mounts a named volume at this
+# exact absolute path (shared between `app` and `worker`, since the parse job reads what the web
+# process wrote) and sets UPLOADS_DIR to match — a named volume with no host bind inherits the
+# image directory's ownership on first creation, so this chown is what makes the volume writable
+# on a fresh boot too, not just the in-image directory.
+RUN mkdir -p /repo/.data/uploads && chown -R app:app /repo/.data
 COPY --from=build /repo/node_modules ./node_modules
 COPY --from=build /repo/package.json ./package.json
 COPY --from=build /repo/tsconfig.base.json ./tsconfig.base.json

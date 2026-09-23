@@ -1,5 +1,5 @@
 import { recordAudit, withTenant } from "@estoque-saas/shared";
-import { nextBalanceAfter } from "./balance";
+import { lockStockRow, nextBalanceAfter } from "./balance";
 
 export interface ManualEntryInput {
   productId: string;
@@ -24,6 +24,8 @@ export async function createManualEntry(
   input: ManualEntryInput,
 ): Promise<ManualEntryResult> {
   return withTenant(tenantId, async (tx) => {
+    await lockStockRow(tx, tenantId, input.productId, input.storeId);
+
     let batchId: string | null = null;
 
     if (input.batchNumber && input.expiryDate) {

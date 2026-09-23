@@ -1,5 +1,5 @@
 import { ValidationError, recordAudit, withTenant } from "@estoque-saas/shared";
-import { nextBalanceAfter } from "./balance";
+import { lockStockRow, nextBalanceAfter } from "./balance";
 import { resolveExitLines } from "./resolve-batches";
 
 export interface StockExitInput {
@@ -25,6 +25,8 @@ export async function createStockExit(tenantId: string, userId: string, input: S
   }
 
   return withTenant(tenantId, async (tx) => {
+    await lockStockRow(tx, tenantId, input.productId, input.storeId);
+
     const product = await tx.product.findUnique({ where: { id: input.productId } });
     if (!product) {
       throw new ValidationError("Produto não encontrado.");

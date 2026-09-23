@@ -1,7 +1,7 @@
 // Módulo: stock — entradas, saídas, transferências, NF-e, lotes/FEFO, alertas.
 // Fronteira: outros módulos e Route Handlers importam SOMENTE deste index.ts (ADR-001).
 export { suggestFefoBatches, type FefoBatchInput, type FefoSuggestionResult } from "./fefo";
-export { getCurrentStock } from "./balance";
+export { getCurrentStock, getCurrentStockForProducts, lockStockRow } from "./balance";
 export { resolveExitLines, type ResolvedExitLine } from "./resolve-batches";
 export { createManualEntry, type ManualEntryInput, type ManualEntryResult } from "./entries";
 export { createStockExit, type StockExitInput, type StockExitResult } from "./exits";

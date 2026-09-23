@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import {
+  DEFAULT_JOB_OPTIONS,
   MAX_NFE_UPLOAD_BYTES,
   QUEUE_NAMES,
   ValidationError,
@@ -11,7 +12,10 @@ import { requireRole } from "@/modules/auth";
 import { uploadNfeImport } from "@/modules/stock";
 import { accepted, handleRoute } from "@/lib/http";
 
-const parseNfeQueue = new Queue<ParseNfeJobData>(QUEUE_NAMES.parseNfe, { connection: redisConnectionOptions() });
+const parseNfeQueue = new Queue<ParseNfeJobData>(QUEUE_NAMES.parseNfe, {
+  connection: redisConnectionOptions(),
+  defaultJobOptions: DEFAULT_JOB_OPTIONS,
+});
 
 // Upload de XML de NF-e (api/openapi/stock.yaml#uploadNfeImport) — multipart/form-data.
 // Só grava o arquivo + enfileira o job de parsing; nunca faz parsing síncrono (ADR-005).

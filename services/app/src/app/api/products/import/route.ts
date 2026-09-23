@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import {
+  DEFAULT_JOB_OPTIONS,
   MAX_CSV_UPLOAD_BYTES,
   QUEUE_NAMES,
   ValidationError,
@@ -11,7 +12,10 @@ import {
 import { requireRole } from "@/modules/auth";
 import { accepted, handleRoute } from "@/lib/http";
 
-const importQueue = new Queue<ImportProductsCsvJobData>(QUEUE_NAMES.importProductsCsv, { connection: redisConnectionOptions() });
+const importQueue = new Queue<ImportProductsCsvJobData>(QUEUE_NAMES.importProductsCsv, {
+  connection: redisConnectionOptions(),
+  defaultJobOptions: DEFAULT_JOB_OPTIONS,
+});
 
 // security-engineer finding H-3: mesmo raciocínio de /api/nfe-imports — worker compartilhado
 // entre todos os tenants (ADR-001), upload sem limite era um vetor de DoS cross-tenant.

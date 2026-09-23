@@ -1,5 +1,5 @@
 import { withTenant } from "@estoque-saas/shared";
-import { getCurrentStock } from "@/modules/stock";
+import { getCurrentStockForProducts } from "@/modules/stock";
 
 export interface DashboardDateFilter {
   storeId?: string | undefined;
@@ -77,13 +77,14 @@ export async function getStockTurnover(tenantId: string, opts: { storeId?: strin
       return [...byCategory.entries()].map(([id, { name, sold }]) => ({ id, name, turnoverRate: sold }));
     }
 
-    return Promise.all(
-      products.map(async (product) => {
-        const currentStock = await getCurrentStock(tx, product.id, opts.storeId);
-        const sold = soldByProduct.get(product.id) ?? 0;
-        return { id: product.id, name: product.name, turnoverRate: currentStock > 0 ? sold / currentStock : sold };
-      }),
-    );
+    // code-reviewer finding HI-1: was one raw getCurrentStock query PER product via
+    // Promise.all — now one batched query for the whole product set.
+    const stockByProduct = await getCurrentStockForProducts(tx, products.map((p) => p.id), opts.storeId);
+    return products.map((product) => {
+      const currentStock = stockByProduct.get(product.id) ?? 0;
+      const sold = soldByProduct.get(product.id) ?? 0;
+      return { id: product.id, name: product.name, turnoverRate: currentStock > 0 ? sold / currentStock : sold };
+    });
   });
 }
 
@@ -95,15 +96,34 @@ export async function getStalledProducts(tenantId: string, opts: { storeId?: str
 
   return withTenant(tenantId, async (tx) => {
     const products = await tx.product.findMany({ where: { deletedAt: null } });
-    const result: Array<{ productId: string; productName: string; lastMovementAt: string | null }> = [];
+    const productIds = products.map((p) => p.id);
 
+    // code-reviewer finding HI-1: was one stockMovement.findFirst query PER product in a
+    // sequential for...of loop — now one batched query (most recent movement per product_id,
+    // same DISTINCT ON technique getCurrentStock/getCurrentStockForProducts already use).
+    const lastMovementByProduct = new Map<string, Date>();
+    if (productIds.length > 0) {
+      const rows = opts.storeId
+        ? await tx.$queryRaw<Array<{ product_id: string; created_at: Date }>>`
+            SELECT DISTINCT ON (product_id) product_id, created_at
+            FROM stock_movements
+            WHERE product_id = ANY(${productIds}::uuid[]) AND store_id = ${opts.storeId}::uuid
+            ORDER BY product_id, created_at DESC
+          `
+        : await tx.$queryRaw<Array<{ product_id: string; created_at: Date }>>`
+            SELECT DISTINCT ON (product_id) product_id, created_at
+            FROM stock_movements
+            WHERE product_id = ANY(${productIds}::uuid[])
+            ORDER BY product_id, created_at DESC
+          `;
+      for (const row of rows) lastMovementByProduct.set(row.product_id, row.created_at);
+    }
+
+    const result: Array<{ productId: string; productName: string; lastMovementAt: string | null }> = [];
     for (const product of products) {
-      const last = await tx.stockMovement.findFirst({
-        where: { productId: product.id, ...(opts.storeId ? { storeId: opts.storeId } : {}) },
-        orderBy: { createdAt: "desc" },
-      });
-      if (!last || last.createdAt < cutoff) {
-        result.push({ productId: product.id, productName: product.name, lastMovementAt: last?.createdAt.toISOString() ?? null });
+      const last = lastMovementByProduct.get(product.id) ?? null;
+      if (!last || last < cutoff) {
+        result.push({ productId: product.id, productName: product.name, lastMovementAt: last?.toISOString() ?? null });
       }
     }
     return result;

@@ -36,35 +36,45 @@ export async function processPagBankWebhook(rawBody: string, signatureHeader: st
     return;
   }
 
+  // code-reviewer finding HI-4: a check-then-act idempotency guard (SELECT, branch in app code,
+  // then UPDATE) has a window under READ COMMITTED — two near-simultaneous deliveries of the SAME
+  // webhook event (gateways routinely re-deliver on timeout, not a contrived scenario) can both
+  // pass the SELECT-based check before either commits, and both run the side effects a second
+  // time (duplicate audit_log entry, subscription.updateMany run twice). Fixed by making the
+  // UPDATE ITSELF the atomic guard: `updateMany`'s WHERE encodes "not yet applied", and its
+  // returned `count` (0 vs 1) tells this transaction whether it won the race — never a prior
+  // SELECT. Same fix shape applied to all three event types, not just charge.paid, since all
+  // three had the identical check-then-act pattern.
   await withTenant(match.tenant_id, async (tx) => {
     if (event.type === "charge.paid" && match.invoice_id) {
-      // Idempotência: gateway_event_id é UNIQUE (schema) — se este evento já foi aplicado
-      // (reentrega do mesmo webhook), não reprocessa.
-      const invoice = await tx.invoice.findUnique({ where: { id: match.invoice_id } });
-      if (!invoice || invoice.gatewayEventId === event.gatewayEventId) return;
-
-      await tx.invoice.update({
-        where: { id: match.invoice_id },
+      const updated = await tx.invoice.updateMany({
+        where: { id: match.invoice_id, OR: [{ gatewayEventId: null }, { gatewayEventId: { not: event.gatewayEventId } }] },
         data: { status: "paid", paidAt: new Date(event.paidAt), gatewayEventId: event.gatewayEventId },
       });
-      await tx.subscription.updateMany({ where: { id: invoice.subscriptionId }, data: { status: "active" } });
+      if (updated.count === 0 || !match.subscription_id) return; // already applied by this or a concurrent/prior delivery
+
+      await tx.subscription.updateMany({ where: { id: match.subscription_id }, data: { status: "active" } });
       await recordAudit(tx, { tenantId: match.tenant_id, userId: null, entityType: "invoice", entityId: match.invoice_id, action: "update", after: { status: "paid" } });
     }
 
     if (event.type === "charge.failed" && match.invoice_id) {
-      const invoice = await tx.invoice.findUnique({ where: { id: match.invoice_id } });
-      if (!invoice || invoice.status === "failed") return;
+      const updated = await tx.invoice.updateMany({
+        where: { id: match.invoice_id, status: { not: "failed" } },
+        data: { status: "failed" },
+      });
+      if (updated.count === 0 || !match.subscription_id) return;
 
-      await tx.invoice.update({ where: { id: match.invoice_id }, data: { status: "failed" } });
-      await tx.subscription.updateMany({ where: { id: invoice.subscriptionId }, data: { status: "past_due" } });
+      await tx.subscription.updateMany({ where: { id: match.subscription_id }, data: { status: "past_due" } });
       await recordAudit(tx, { tenantId: match.tenant_id, userId: null, entityType: "invoice", entityId: match.invoice_id, action: "update", after: { status: "failed" } });
     }
 
     if (event.type === "subscription.canceled" && match.subscription_id) {
-      const subscription = await tx.subscription.findUnique({ where: { id: match.subscription_id } });
-      if (!subscription || subscription.status === "canceled") return;
+      const updated = await tx.subscription.updateMany({
+        where: { id: match.subscription_id, status: { not: "canceled" } },
+        data: { status: "canceled" },
+      });
+      if (updated.count === 0) return;
 
-      await tx.subscription.update({ where: { id: match.subscription_id }, data: { status: "canceled" } });
       await recordAudit(tx, { tenantId: match.tenant_id, userId: null, entityType: "subscription", entityId: match.subscription_id, action: "update", after: { status: "canceled" } });
     }
   });

@@ -9,6 +9,7 @@
 
 import { Queue, Worker } from "bullmq";
 import {
+  DEFAULT_JOB_OPTIONS,
   QUEUE_NAMES,
   defaultFileStorage,
   redisConnectionOptions,
@@ -68,14 +69,20 @@ console.log(`[worker] escutando fila: ${QUEUE_NAMES.importProductsCsv}`);
 // repeatable job só é (re)criado uma vez — chamar .add() de novo com o mesmo jobId/pattern é
 // idempotente, seguro de rodar a cada boot do worker).
 async function scheduleRepeatableJobs(): Promise<void> {
-  const monthlyChargeQueue = new Queue<GenerateMonthlyChargeJobData>(QUEUE_NAMES.generateMonthlyCharge, { connection });
+  const monthlyChargeQueue = new Queue<GenerateMonthlyChargeJobData>(QUEUE_NAMES.generateMonthlyCharge, {
+    connection,
+    defaultJobOptions: DEFAULT_JOB_OPTIONS,
+  });
   await monthlyChargeQueue.add(
     "generate-monthly-charge-daily",
     {},
     { repeat: { pattern: "0 6 * * *" }, jobId: "generate-monthly-charge-daily" }, // 06:00 diário
   );
 
-  const expiryAlertsQueue = new Queue<ScanExpiryAlertsJobData>(QUEUE_NAMES.scanExpiryAlerts, { connection });
+  const expiryAlertsQueue = new Queue<ScanExpiryAlertsJobData>(QUEUE_NAMES.scanExpiryAlerts, {
+    connection,
+    defaultJobOptions: DEFAULT_JOB_OPTIONS,
+  });
   await expiryAlertsQueue.add(
     "scan-expiry-alerts-daily",
     {},

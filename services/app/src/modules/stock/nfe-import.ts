@@ -7,7 +7,7 @@ import {
   withTenant,
   type FileStorage,
 } from "@estoque-saas/shared";
-import { nextBalanceAfter } from "./balance";
+import { lockStockRow, nextBalanceAfter } from "./balance";
 import { parseNfeXml } from "./nfe-parser";
 
 export interface UploadNfeImportResult {
@@ -120,6 +120,8 @@ export async function confirmNfeImport(
       if (!item.matchedProductId) continue; // defensivo — já garantido pelo check acima
       const product = await tx.product.findUnique({ where: { id: item.matchedProductId } });
       if (!product) continue;
+
+      await lockStockRow(tx, tenantId, product.id, nfeImport.storeId);
 
       const quantity = Math.round(Number(item.qCom));
       const override = overrideByItemId.get(item.id);

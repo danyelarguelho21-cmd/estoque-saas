@@ -34,3 +34,14 @@ export type ScanExpiryAlertsJobData = Record<string, never>;
 export function redisConnectionOptions(): { url: string } {
   return { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 }
+
+// code-reviewer finding HI-2: none of the four `new Queue(...)` call sites passed
+// `defaultJobOptions` — BullMQ's bare default for a job with no `attempts` is a single attempt,
+// no retry, so a worker restart mid-job or a transient Postgres/Redis blip permanently drops the
+// job (an NF-e upload silently stuck, a tenant's daily billing charge silently skipped, a day of
+// expiry alerts silently never firing). Every queue in the tree should set this — pass to
+// `new Queue(name, { connection, defaultJobOptions: DEFAULT_JOB_OPTIONS })`.
+export const DEFAULT_JOB_OPTIONS = {
+  attempts: 3,
+  backoff: { type: "exponential", delay: 5000 },
+} as const;

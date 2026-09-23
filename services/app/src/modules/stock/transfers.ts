@@ -1,5 +1,5 @@
 import { ValidationError, recordAudit, withTenant, type TenantScopedClient } from "@estoque-saas/shared";
-import { nextBalanceAfter } from "./balance";
+import { lockStockRow, nextBalanceAfter } from "./balance";
 import { resolveExitLines } from "./resolve-batches";
 
 export interface TransferItemInput {
@@ -68,6 +68,15 @@ async function transferOneItem(
   destinationStoreId: string,
   item: TransferItemInput,
 ): Promise<void> {
+  // Trava origem e destino em ordem determinística (por store_id) — nunca origem-depois-destino
+  // fixo, pois duas transferências concorrentes em sentidos opostos entre as mesmas duas lojas
+  // travariam na ordem inversa uma da outra, causando deadlock. Ordenando pela mesma chave em
+  // toda chamada, todas as transações adquirem as duas travas na mesma sequência.
+  const [firstStoreId, secondStoreId] =
+    originStoreId < destinationStoreId ? [originStoreId, destinationStoreId] : [destinationStoreId, originStoreId];
+  await lockStockRow(tx, tenantId, item.productId, firstStoreId);
+  await lockStockRow(tx, tenantId, item.productId, secondStoreId);
+
   const product = await tx.product.findUnique({ where: { id: item.productId } });
   if (!product) {
     throw new ValidationError("Produto não encontrado.", { productId: item.productId });

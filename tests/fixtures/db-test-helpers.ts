@@ -5,12 +5,19 @@
 // setup/verification purposes — mirrors the "administrative migration user" carve-out described
 // in ADR-002 (only a separate admin user has BYPASSRLS; the app_user does not).
 //
-// These helpers apply schemas/migrations/0001_init.sql directly (the SQL source of truth for
-// RLS policies per ADR-002) rather than `prisma migrate`, because at Wave-A time the Prisma
-// schema is intentionally incomplete (see libs/shared/prisma/schema.prisma comment — full model
-// set lands during BUILD). Once the backend engineer's Prisma migrations exist, this helper
-// should be updated to run `prisma migrate deploy` instead — tracked as a QA follow-up, not a
-// blocker for the acceptance scaffolds themselves.
+// QA follow-up closed (was: "these helpers apply 0001_init.sql only, tracked as a follow-up once
+// the backend engineer's Prisma migrations exist"): resetTestDatabase() now applies the FULL
+// migration chain, in the same order scripts/apply-role-grants.mjs uses for real deploys —
+// 0001/0002 (base schema, Prisma-equivalent DDL) then 0008/0003/0004/0009/0005/0006/0007 (RLS +
+// app_user/platform_admin_role roles + grants + lookup functions). Discovered missing while
+// verifying the CR-1 concurrency fix: every HTTP-driven integration test (signup, and anything
+// downstream of it) was failing "Authentication failed... app_user" against a truly fresh
+// container, because `platformPrisma`/`withTenant()` connect as `app_user`
+// (libs/shared/src/db/client.ts) and that role is only ever CREATEd by 0003, never by 0001 alone.
+// __APP_DB_PASSWORD__/__PLATFORM_ADMIN_DB_PASSWORD__ are substituted with fixed test-only
+// passwords — must match the app_user/platform_admin_role segments of TEST_APP_DATABASE_URL /
+// PLATFORM_ADMIN_DATABASE_URL below (and whatever env vars boot the app server against this same
+// test database for HTTP-driven tests).
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -21,7 +28,19 @@ import bcrypt from "bcryptjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
-const MIGRATION_SQL_PATH = path.join(REPO_ROOT, "schemas/migrations/0001_init.sql");
+const TEST_APP_DB_PASSWORD = "devpassword-app-user";
+const TEST_PLATFORM_ADMIN_DB_PASSWORD = "devpassword-platform-admin";
+const MIGRATION_FILES = [
+  "0001_init.sql",
+  "0002_remaining_tables.sql",
+  "0008_enable_row_level_security.sql",
+  "0003_app_role_and_grants.sql",
+  "0004_auth_lookup_function.sql",
+  "0009_auth_lookup_tenant_name.sql",
+  "0005_billing_webhook_lookup_function.sql",
+  "0006_platform_admin_role.sql",
+  "0007_platform_list_active_tenants_function.sql",
+].map((f) => path.join(REPO_ROOT, "schemas/migrations", f));
 
 export const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ??
@@ -36,7 +55,13 @@ export const TEST_DATABASE_URL =
  * it can never fail even if the real app_user privileges regress. */
 export const TEST_APP_DATABASE_URL =
   process.env.TEST_APP_DATABASE_URL ??
-  "postgresql://app_user:devpassword-app-user@localhost:5433/estoque_saas_test";
+  `postgresql://app_user:${TEST_APP_DB_PASSWORD}@localhost:5433/estoque_saas_test`;
+
+/** The `platform_admin_role` connection (BYPASSRLS, schemas/migrations/0006) — used by the admin
+ * panel module only (services/app/src/modules/admin), never by tenant-scoped tests. */
+export const TEST_PLATFORM_ADMIN_DATABASE_URL =
+  process.env.TEST_PLATFORM_ADMIN_DATABASE_URL ??
+  `postgresql://platform_admin_role:${TEST_PLATFORM_ADMIN_DB_PASSWORD}@localhost:5433/estoque_saas_test`;
 
 /**
  * Ensures the test database has the full schema + RLS policies (0001_init.sql, which is the
@@ -58,20 +83,51 @@ export const TEST_APP_DATABASE_URL =
  * If unreachable, throws; callers should let the test fail loudly (an integration suite that
  * silently skips because "no DB" is not an oracle — loop-protocol Rule 1).
  */
+// Fixed, arbitrary key for the session advisory lock below — must be the SAME constant across
+// every process/connection calling resetTestDatabase() for the lock to actually serialize them.
+const RESET_TEST_DATABASE_LOCK_KEY = 0x1e57_da7a;
+
+async function tenantsTableExists(client: Client): Promise<boolean> {
+  const { rows } = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'tenants') AS exists`,
+  );
+  return rows[0]?.exists ?? false;
+}
+
 export async function resetTestDatabase(): Promise<void> {
   const client = new Client({ connectionString: TEST_DATABASE_URL });
   await client.connect();
   try {
-    const { rows } = await client.query<{ exists: boolean }>(
-      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'tenants') AS exists`,
-    );
-    if (rows[0]?.exists) {
+    if (await tenantsTableExists(client)) {
       // Shared/persistent database — do not touch existing data. See doc comment above.
       return;
     }
-    await client.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
-    const sql = readFileSync(MIGRATION_SQL_PATH, "utf-8");
-    await client.query(sql);
+
+    // Vitest runs test FILES in parallel by default, and every integration test file calls
+    // resetTestDatabase() in its own beforeAll — against a truly fresh container (first run after
+    // `docker compose up`), every one of them would race to DROP SCHEMA at the same moment,
+    // producing "referenced schema was concurrently dropped"/"relation does not exist" errors in
+    // whichever files lose the race. A session advisory lock serializes them: the first caller to
+    // acquire it does the real DROP+migrate; everyone else blocks until it commits, then re-checks
+    // (double-checked locking) and takes the fast-path return above instead of racing.
+    await client.query(`SELECT pg_advisory_lock(${RESET_TEST_DATABASE_LOCK_KEY})`);
+    try {
+      if (await tenantsTableExists(client)) return; // another caller already won the race
+
+      await client.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
+      for (const migrationPath of MIGRATION_FILES) {
+        // 0003/0006's `GRANT CONNECT ON DATABASE estoque_saas` is hardcoded to the dev/prod DB
+        // name (correct for scripts/apply-role-grants.mjs's real target) — substitute it to this
+        // ephemeral test DB's actual name so the GRANT doesn't fail with "database does not exist".
+        const sql = readFileSync(migrationPath, "utf-8")
+          .replaceAll("__APP_DB_PASSWORD__", TEST_APP_DB_PASSWORD)
+          .replaceAll("__PLATFORM_ADMIN_DB_PASSWORD__", TEST_PLATFORM_ADMIN_DB_PASSWORD)
+          .replaceAll("DATABASE estoque_saas ", "DATABASE estoque_saas_test ");
+        await client.query(sql);
+      }
+    } finally {
+      await client.query(`SELECT pg_advisory_unlock(${RESET_TEST_DATABASE_LOCK_KEY})`);
+    }
   } finally {
     await client.end();
   }

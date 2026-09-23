@@ -1,5 +1,5 @@
 import { ValidationError, recordAudit, withTenant } from "@estoque-saas/shared";
-import { getCurrentStock, resolveExitLines } from "@/modules/stock";
+import { getCurrentStock, lockStockRow, resolveExitLines } from "@/modules/stock";
 
 export interface SaleItemInput {
   productId: string;
@@ -45,6 +45,8 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
     });
 
     for (const item of input.items) {
+      await lockStockRow(tx, tenantId, item.productId, input.storeId);
+
       const product = await tx.product.findUnique({ where: { id: item.productId } });
       if (!product) {
         throw new ValidationError("Produto não encontrado.", { productId: item.productId });

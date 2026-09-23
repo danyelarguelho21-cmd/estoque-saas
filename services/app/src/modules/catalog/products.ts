@@ -6,7 +6,7 @@ import {
   type TenantScopedClient,
 } from "@estoque-saas/shared";
 import { getTenantWithPlan } from "@/modules/auth";
-import { getCurrentStock } from "@/modules/stock";
+import { getCurrentStock, getCurrentStockForProducts } from "@/modules/stock";
 
 export interface ProductInput {
   sku: string;
@@ -57,7 +57,10 @@ export async function listProducts(tenantId: string, filters: ListProductsFilter
     const hasMore = products.length > limit;
     const page = hasMore ? products.slice(0, limit) : products;
 
-    let withStock = await Promise.all(page.map((p) => withCurrentStock(tx, p, filters.storeId)));
+    // code-reviewer finding HI-1: was one getCurrentStock query PER product in the page (up to
+    // 101, since the route clamps limit to 100) via Promise.all — now one batched query.
+    const stockByProduct = await getCurrentStockForProducts(tx, page.map((p) => p.id), filters.storeId);
+    let withStock = page.map((p) => ({ ...p, currentStock: stockByProduct.get(p.id) ?? 0 }));
     if (filters.belowMinStock) {
       withStock = withStock.filter((p) => p.currentStock < p.minStockGlobal);
     }
