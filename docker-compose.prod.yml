@@ -55,6 +55,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    # sre finding (T9b, readiness-review-ship.md §6) — ver comentário completo em docker-compose.yml.
+    mem_limit: 256m
+    cpus: 0.25
 
 volumes:
   caddy_data:

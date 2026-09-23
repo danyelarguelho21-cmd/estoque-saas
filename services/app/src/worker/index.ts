@@ -24,7 +24,7 @@ import { processNfeImportJob, scanExpiryAndLowStockAlerts } from "@/modules/stoc
 
 const connection = redisConnectionOptions();
 
-new Worker<ParseNfeJobData>(
+const parseNfeWorker = new Worker<ParseNfeJobData>(
   QUEUE_NAMES.parseNfe,
   async (job) => {
     await processNfeImportJob(job.data.tenantId, job.data.importId);
@@ -33,7 +33,7 @@ new Worker<ParseNfeJobData>(
 );
 console.log(`[worker] escutando fila: ${QUEUE_NAMES.parseNfe}`);
 
-new Worker<GenerateMonthlyChargeJobData>(
+const monthlyChargeWorker = new Worker<GenerateMonthlyChargeJobData>(
   QUEUE_NAMES.generateMonthlyCharge,
   async () => {
     const result = await generateMonthlyCharges();
@@ -43,7 +43,7 @@ new Worker<GenerateMonthlyChargeJobData>(
 );
 console.log(`[worker] escutando fila: ${QUEUE_NAMES.generateMonthlyCharge}`);
 
-new Worker<ScanExpiryAlertsJobData>(
+const expiryAlertsWorker = new Worker<ScanExpiryAlertsJobData>(
   QUEUE_NAMES.scanExpiryAlerts,
   async () => {
     const result = await scanExpiryAndLowStockAlerts();
@@ -53,7 +53,7 @@ new Worker<ScanExpiryAlertsJobData>(
 );
 console.log(`[worker] escutando fila: ${QUEUE_NAMES.scanExpiryAlerts}`);
 
-new Worker<ImportProductsCsvJobData>(
+const importProductsWorker = new Worker<ImportProductsCsvJobData>(
   QUEUE_NAMES.importProductsCsv,
   async (job) => {
     const buffer = await defaultFileStorage.read(job.data.fileRef);
@@ -63,6 +63,24 @@ new Worker<ImportProductsCsvJobData>(
   { connection },
 );
 console.log(`[worker] escutando fila: ${QUEUE_NAMES.importProductsCsv}`);
+
+const allWorkers = [parseNfeWorker, monthlyChargeWorker, expiryAlertsWorker, importProductsWorker];
+
+// sre finding (T9b, readiness-review-ship.md §2): sem handler de SIGTERM, um `docker compose
+// stop`/restart de deploy (cd-production.yml) mata o processo direto após o
+// `stop_grace_period` padrão do Docker (10s) — qualquer job em andamento (parse de NF-e, geração
+// de cobrança, webhook) é morto no meio, não drenado. `Worker.close()` do BullMQ espera o job
+// ATUAL de cada worker terminar antes de resolver (não aceita mais jobs novos enquanto isso) —
+// use com `stop_grace_period` elevado no compose (worker: 60s, ver docker-compose.yml) para dar
+// tempo real de a maioria dos jobs terminar antes do SIGKILL.
+async function shutdown(signal: string): Promise<void> {
+  console.log(`[worker] ${signal} recebido — drenando jobs em andamento antes de encerrar...`);
+  await Promise.allSettled(allWorkers.map((w) => w.close()));
+  console.log("[worker] todos os workers fechados, encerrando.");
+  process.exit(0);
+}
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
 
 // Agendamento (repeatable jobs) — generate-monthly-charge e scan-expiry-alerts rodam sozinhos,
 // diariamente, sem depender de nenhum Route Handler para dispará-los (BullMQ garante que o

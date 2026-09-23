@@ -40,6 +40,7 @@ const MIGRATION_FILES = [
   "0005_billing_webhook_lookup_function.sql",
   "0006_platform_admin_role.sql",
   "0007_platform_list_active_tenants_function.sql",
+  "0010_role_timeouts.sql",
 ].map((f) => path.join(REPO_ROOT, "schemas/migrations", f));
 
 export const TEST_DATABASE_URL =

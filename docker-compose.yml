@@ -27,6 +27,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    # sre finding (T9b, readiness-review-ship.md §6) — ver comentário completo no serviço `app`.
+    mem_limit: 2g
+    cpus: 1.5
 
   redis:
     image: redis:7-alpine
@@ -39,6 +42,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    mem_limit: 512m
+    cpus: 0.5
 
   app:
     build:
@@ -51,8 +56,13 @@ services:
       # `make migrate`, tipicamente rodado fora do container app. APP_DATABASE_URL (role
       # restrita "app_user", sem BYPASSRLS) é a conexão real da aplicação (ver .env.example,
       # security-engineer finding C-1, e libs/shared/src/db/client.ts).
-      APP_DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD:-devpassword-app-user}@postgres:5432/estoque_saas
-      PLATFORM_ADMIN_DATABASE_URL: postgresql://platform_admin_role:${PLATFORM_ADMIN_DB_PASSWORD:-devpassword-platform-admin}@postgres:5432/estoque_saas
+      # sre finding (T9b, readiness-review-ship.md §3): Prisma's default connection pool size is
+      # `num_cpus*2+1` PER CLIENT, unbounded by config — with no container CPU limit (fixed below),
+      # this scaled with the HOST's core count, not a chosen budget. `connection_limit`/
+      # `pool_timeout` values are SRE's (capacity/scaling-configs.yaml) — sized so `app`+`worker`
+      # together stay well under postgres.max_connections (100) with headroom.
+      APP_DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD:-devpassword-app-user}@postgres:5432/estoque_saas?connection_limit=10&pool_timeout=10
+      PLATFORM_ADMIN_DATABASE_URL: postgresql://platform_admin_role:${PLATFORM_ADMIN_DB_PASSWORD:-devpassword-platform-admin}@postgres:5432/estoque_saas?connection_limit=5&pool_timeout=10
       REDIS_URL: redis://redis:6379
       # qa-engineer finding C-1: LocalFileStorage's default ("./.data/uploads") is relative to CWD
       # and resolves under /repo, unwritable by the non-root `app` user (EACCES on every upload).
@@ -77,6 +87,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    # sre finding (T9b, readiness-review-ship.md §6): no container resource limits existed
+    # anywhere — values from capacity/scaling-configs.yaml, sized for a 4 vCPU / 8GB VPS tier
+    # (starting points, re-derive once the actual VPS spec is confirmed).
+    mem_limit: 2g
+    cpus: 1.5
 
   worker:
     build:
@@ -87,7 +102,7 @@ services:
     env_file: .env
     environment:
       # Mesma role restrita "app_user" usada pelo processo web — ver comentário no serviço `app`.
-      APP_DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD:-devpassword-app-user}@postgres:5432/estoque_saas
+      APP_DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD:-devpassword-app-user}@postgres:5432/estoque_saas?connection_limit=10&pool_timeout=10
       REDIS_URL: redis://redis:6379
       UPLOADS_DIR: /repo/.data/uploads # ver comentário no serviço `app` — mesmo volume, mesmo path
     volumes:
@@ -97,6 +112,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # sre finding (T9b, readiness-review-ship.md §2): default stop_grace_period (10s) is short
+    # relative to a large NF-e import's typical parse duration — raised so the SIGTERM handler in
+    # worker/index.ts has real time to drain the in-flight job before Docker sends SIGKILL. Not
+    # sized to cover every outlier (BullMQ's stalled-job recovery + HI-2's retry/backoff is the
+    # backstop for that), just the common case.
+    stop_grace_period: 60s
+    mem_limit: 2g
+    cpus: 1.5
     healthcheck:
       # Worker não expõe porta HTTP (só consome filas BullMQ) — não há endpoint para curl/wget.
       # Verifica liveness pela presença do processo Node rodando o entrypoint do worker

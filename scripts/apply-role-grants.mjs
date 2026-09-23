@@ -26,6 +26,7 @@ const sqlFiles = [
   "0005_billing_webhook_lookup_function.sql",
   "0006_platform_admin_role.sql",
   "0007_platform_list_active_tenants_function.sql",
+  "0010_role_timeouts.sql", // depende de 0003/0006 já terem criado as roles
 ].map((f) =>
   path.join(__dirname, "..", "schemas", "migrations", f),
 );
