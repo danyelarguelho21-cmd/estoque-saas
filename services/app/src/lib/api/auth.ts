@@ -1,9 +1,8 @@
 import { api } from "./client";
 
 /**
- * Apenas o endpoint de onboarding (`/api/auth/signup`) — não é gerenciado pelo Auth.js.
- * Login/logout usam `signIn`/`signOut` de `next-auth/react` diretamente nos componentes
- * (boundary-safety Pattern 2 — delega ao controle de fluxo do framework de auth).
+ * Endpoints próprios do contrato (`/api/auth/signup` e `/api/auth/login`). Logout continua
+ * usando `signOut` de `next-auth/react` para deixar o framework limpar a sessão no navegador.
  */
 export interface SignupInput {
   companyName: string;
@@ -21,4 +20,5 @@ export interface SignupResult {
 
 export const authApi = {
   signup: (input: SignupInput) => api.post<SignupResult>("/api/auth/signup", input),
+  login: (input: { email: string; password: string }) => api.post<{ status: "ok" }>("/api/auth/login", input),
 };

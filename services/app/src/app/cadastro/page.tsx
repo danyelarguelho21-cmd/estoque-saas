@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { signIn } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
 import { CreditCard, QrCode } from "lucide-react";
 import { AuthShell } from "@/components/layout/auth-shell";
@@ -23,6 +23,7 @@ type PaymentMethod = "card" | "pix_boleto";
 
 export default function SignupPage() {
   const router = useRouter();
+  const { update: refreshSession } = useSession();
   const plansQuery = useQuery({ queryKey: ["plans"], queryFn: billingApi.listPlans });
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -53,8 +54,10 @@ export default function SignupPage() {
     setSubmitting(true);
     try {
       await authApi.signup({ companyName, cnpj, adminName, adminEmail, password, planId });
-      const result = await signIn("credentials", { email: adminEmail, password, redirect: false });
-      if (!result || result.error) {
+      try {
+        await authApi.login({ email: adminEmail, password });
+        await refreshSession();
+      } catch {
         setError("Empresa criada, mas não foi possível entrar automaticamente. Faça login manualmente.");
         router.push("/entrar");
         return;

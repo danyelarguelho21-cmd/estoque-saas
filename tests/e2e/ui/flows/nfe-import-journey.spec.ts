@@ -7,10 +7,8 @@
 // implemented frontend (services/app/src/app/{produtos/novo,configuracoes/lojas,estoque/nfe,
 // estoque/nfe/[importId]}/page.tsx) — Wave A's `/catalog/products/new`, `/stock/nfe-imports/new`
 // and the full data-testid contract never matched what was built (no data-testid exists anywhere
-// in services/app/src/app — see signup.page.ts for the fuller rationale). Also: a fresh signup
-// creates NO store (services/app/src/modules/auth/signup.ts only creates tenant+admin+trialing
-// subscription), so this journey must create one via /configuracoes/lojas before it can even
-// reach the store-select dropdown on the NF-e upload screen.
+// in services/app/src/app - see signup.page.ts for the fuller rationale). Signup creates the
+// default "Loja principal", which this journey uses as the NF-e destination.
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,12 +33,9 @@ test("operator uploads NF-e XML, reviews matched items, and confirming updates t
   });
   await new DashboardPage(page).waitForLoad();
 
-  // Signup creates no store — create one (real journey a first-time admin also has to do).
+  // Verify and reuse the default store created during signup; the Basic plan allows one store.
   await page.goto("/configuracoes/lojas");
-  await page.getByRole("button", { name: "Nova loja" }).click();
-  await page.getByLabel("Nome").fill("Loja Principal");
-  await page.getByRole("button", { name: "Cadastrar" }).click();
-  await expect(page.getByText("Loja Principal")).toBeVisible();
+  await expect(page.getByText("Loja principal")).toBeVisible();
 
   // Pre-register the product so the item matches by barcode (keeps this spec focused on the
   // review/confirm UI journey rather than the unmatched-item quick-registration sub-flow).
@@ -60,7 +55,7 @@ test("operator uploads NF-e XML, reviews matched items, and confirming updates t
   // The shared `Select` (components/ui/select.tsx) is a Radix combobox `<button>`, not a native
   // `<select>` — open it and click the option, rather than `selectOption()`.
   await page.getByLabel("Loja/depósito de destino").click();
-  await page.getByRole("option", { name: "Loja Principal" }).click();
+  await page.getByRole("option", { name: "Loja principal" }).click();
   // FileDrop (components/features/file-drop.tsx) renders a real, visually-hidden `<input
   // type="file">` — setInputFiles() works on it directly without needing to simulate a drag/click.
   await page.locator('input[type="file"]').setInputFiles(xmlPath);
@@ -69,14 +64,8 @@ test("operator uploads NF-e XML, reviews matched items, and confirming updates t
   // page.tsx `handleFile` -> `router.push('/estoque/nfe/${importId}')`); the UI itself polls for
   // parse completion (`refetchInterval` while status === pending_parse), never a fixed sleep.
   //
-  // KNOWN BLOCKER (Critical finding, logged separately — see
-  // Claude-Production-Grade-Suite/qa-engineer/findings/critical.md): NF-e upload currently fails
-  // with EACCES writing to the app container's local `./.data/uploads` (non-root Docker user has
-  // no write access, no volume mounted) — the SAME root cause tests/integration/nfe-import.test.ts
-  // already proves at the API level. This UI assertion is written against the INTENDED, correct
-  // behavior per ADR-005/design-principles.md and is expected to stay red until that bug is fixed
-  // — weakening it to match the current broken behavior would hide a P0 acceptance-criterion
-  // regression instead of documenting it (loop-protocol Rule 4).
+  // Do not weaken this assertion to match a failed import: this full browser journey verifies the
+  // intended review/confirm behavior after the app and worker share the configured upload volume.
   await expect(page.getByRole("heading", { name: "Conferência de NF-e" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("Reconhecido").first()).toBeVisible();
 

@@ -27,12 +27,9 @@ test("finishing a sale redirects to the REAL sale's detail page, not /vendas/und
   });
   await new DashboardPage(page).waitForLoad();
 
-  // Signup creates no store — same prerequisite as nfe-import-journey.spec.ts.
+  // Reuse the default store created during signup; the Basic plan allows one store.
   await page.goto("/configuracoes/lojas");
-  await page.getByRole("button", { name: "Nova loja" }).click();
-  await page.getByLabel("Nome").fill("Loja Principal");
-  await page.getByRole("button", { name: "Cadastrar" }).click();
-  await expect(page.getByText("Loja Principal")).toBeVisible();
+  await expect(page.getByText("Loja principal")).toBeVisible();
 
   // Register a product with stock via /produtos/novo, then a manual stock entry so the sale
   // doesn't 409 on insufficient stock (keeps this spec focused on the redirect bug, not FEFO).
@@ -47,7 +44,7 @@ test("finishing a sale redirects to the REAL sale's detail page, not /vendas/und
   await page.getByPlaceholder("Buscar produto por nome, SKU ou código de barras").fill("Produto para Venda");
   await page.getByRole("option", { name: /Produto para Venda/ }).click();
   await page.getByLabel("Loja/depósito de destino").click();
-  await page.getByRole("option", { name: "Loja Principal" }).click();
+  await page.getByRole("option", { name: "Loja principal" }).click();
   await page.getByLabel("Quantidade").fill("50");
   await page.getByRole("button", { name: "Registrar entrada" }).click();
   await expect(page).toHaveURL(/\/estoque$/);
@@ -55,7 +52,7 @@ test("finishing a sale redirects to the REAL sale's detail page, not /vendas/und
   // The actual flow under test.
   await page.goto("/vendas/nova");
   await page.getByLabel("Loja").click();
-  await page.getByRole("option", { name: "Loja Principal" }).click();
+  await page.getByRole("option", { name: "Loja principal" }).click();
   await page.getByPlaceholder("Buscar produto por nome, SKU ou código de barras").fill("Produto para Venda");
   await page.getByRole("option", { name: /Produto para Venda/ }).click();
   await page.getByLabel("Preço unit. (R$)").fill("29.90");

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
-const TEST_APP_URL = "http://127.0.0.1:3100";
+const TEST_APP_URL = "http://localhost:3100";
 
 function assertIsolatedTestDatabase(value: string, variableName: string): string {
   const url = new URL(value);
@@ -34,6 +34,15 @@ const redisUrl = new URL(process.env.TEST_REDIS_URL ?? "redis://localhost:6380")
 if (redisUrl.protocol !== "redis:" || !["localhost", "127.0.0.1", "::1"].includes(redisUrl.hostname) || redisUrl.port !== "6380") {
   throw new Error(`[e2e] REFUSING to run: TEST_REDIS_URL must point to local test Redis on port 6380; received ${redisUrl.host}.`);
 }
+const testServerEnv = {
+  DATABASE_URL: databaseUrl,
+  APP_DATABASE_URL: appDatabaseUrl,
+  PLATFORM_ADMIN_DATABASE_URL: platformAdminDatabaseUrl,
+  REDIS_URL: redisUrl.toString(),
+  AUTH_SECRET: "test-secret-not-for-production-0123456789",
+  AUTH_URL: TEST_APP_URL,
+  UPLOADS_DIR: path.join(REPO_ROOT, ".data", "e2e-uploads"),
+};
 
 // QA-owned Playwright config (loop-protocol Rule 4 — tests/ and its runner config are the
 // oracle of record; engineers build against it, never weaken it).
@@ -47,16 +56,18 @@ if (redisUrl.protocol !== "redis:" || !["localhost", "127.0.0.1", "::1"].include
 // boundary-safety Pattern 5 (full user journeys, not just individual endpoint responses).
 //
 // E2E is intentionally isolated from the persistent dev/prod stack. It always launches its own
-// Next.js process on port 3100 with local test-only Postgres (5433) and Redis (6380). It never
-// reuses an existing server or accepts an external base URL, since either could write tenants to
-// a database whose identity this config cannot verify. Bring up the test dependencies and apply
-// the test migrations/seeds before running the suite.
+// Next.js and BullMQ worker processes use local test-only Postgres (5433), Redis (6380), and an
+// isolated upload directory. Gateway calls are pointed at a closed local port with a dummy key,
+// so signup jobs cannot create real PagBank sandbox orders during unrelated browser journeys. The
+// suite never reuses an existing server or accepts an external base URL. Bring up the test
+// dependencies and apply test migrations/seeds before running it.
 export default defineConfig({
   testDir: __dirname,
   testMatch: ["**/*.spec.ts", "**/*.e2e.ts"],
   timeout: 30_000,
   expect: { timeout: 10_000 },
   fullyParallel: false, // suites share one app instance + DB; parallel workers would race on tenant/plan seed data
+  workers: 1, // keep files sharing the isolated DB/Redis sequential even when Playwright's default is multi-worker
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [["default"], ["junit", { outputFile: "tests/coverage/junit-playwright.xml" }]] : "list",
   use: {
@@ -68,19 +79,36 @@ export default defineConfig({
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
-  webServer: {
-    command: "npm run dev --workspace services/app -- -p 3100",
-    cwd: REPO_ROOT,
-    url: TEST_APP_URL + "/api/healthz",
-    reuseExistingServer: false,
-    timeout: 60_000,
-    env: {
-      DATABASE_URL: databaseUrl,
-      APP_DATABASE_URL: appDatabaseUrl,
-      PLATFORM_ADMIN_DATABASE_URL: platformAdminDatabaseUrl,
-      REDIS_URL: redisUrl.toString(),
-      AUTH_SECRET: "test-secret-not-for-production-0123456789",
-      AUTH_URL: TEST_APP_URL,
+  webServer: [
+    {
+      command: "npm run dev --workspace services/app -- -p 3100",
+      cwd: REPO_ROOT,
+      url: TEST_APP_URL + "/api/healthz",
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: {
+        ...testServerEnv,
+        PAGBANK_API_KEY: "e2e-no-gateway-key",
+        PAGBANK_BASE_URL: "http://127.0.0.1:1",
+        PAGBANK_WEBHOOK_SECRET: "e2e-webhook-secret-not-real",
+        RATE_LIMIT_SIGNUP_IP_MAX: "100",
+        RATE_LIMIT_LOGIN_IP_MAX: "100",
+      },
     },
-  },
+    {
+      command: "npm run worker --workspace services/app",
+      cwd: REPO_ROOT,
+      wait: { stdout: /\[worker\] escutando fila: generate-monthly-charge/ },
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: {
+        ...testServerEnv,
+        PAGBANK_API_KEY: "e2e-no-gateway-key",
+        PAGBANK_BASE_URL: "http://127.0.0.1:1",
+        PAGBANK_WEBHOOK_SECRET: "e2e-webhook-secret-not-real",
+        RATE_LIMIT_SIGNUP_IP_MAX: "100",
+        RATE_LIMIT_LOGIN_IP_MAX: "100",
+      },
+    },
+  ],
 });
