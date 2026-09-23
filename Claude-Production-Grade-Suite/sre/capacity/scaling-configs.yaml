@@ -1,0 +1,108 @@
+# Recommended configuration targets — estoque-saas (single VPS, Docker Compose)
+#
+# SRE defines these thresholds/targets (sole authority per conflict-resolution.md); DevOps
+# implements them in docker-compose*.yml / .env / Caddyfile. This file is a specification, not an
+# implementation — no docker-compose*.yml file was edited by this task (T9b constraint: SRE
+# reviews/validates DevOps's infra, does not provision or rewrite it).
+#
+# All numbers below assume a 4 vCPU / 8GB RAM VPS tier as a reasonable mid-budget default for this
+# product's stage (PME SaaS, solo/pair team, <1,000 tenants year 1) — NOT a confirmed provisioned
+# spec (see load-model.md's assumption flag). Re-derive these numbers once DevOps records the
+# actual VPS spec in production-deployment.md.
+
+postgres:
+  max_connections: 100  # postgres:18-alpine default — no override recommended at 1x scale, but
+                          # SEE connection_limit budget below: default Prisma pool sizing alone can
+                          # approach a meaningful fraction of this, so the fix is on the client side
+                          # first, not by raising this ceiling.
+  recommended_role_settings:
+    # Apply via: ALTER ROLE app_user SET statement_timeout = '15s';  (per role, per
+    # readiness-review-ship.md §3/§4 — no timeout configured anywhere today)
+    app_user:
+      statement_timeout: 15s   # generous relative to web-write-latency-slo's p95 1500ms — this is
+                                 # a backstop against a truly runaway query, not a normal-path limit
+      lock_timeout: 5s          # bounds CR-1's pg_advisory_xact_lock wait — a request that can't
+                                 # acquire the lock within 5s should fail cleanly and let the caller
+                                 # retry, not queue indefinitely and hold a connection slot
+                                 # (bottleneck-analysis.md §1's CR-1 interaction)
+      idle_in_transaction_session_timeout: 30s  # kills an orphaned open transaction (e.g. an
+                                 # unhandled exception between lockStockRow() and the following
+                                 # writes) instead of leaking a connection + a held lock forever
+    platform_admin_role:
+      statement_timeout: 30s    # admin panel queries (cross-tenant aggregates) are allowed more
+                                 # headroom than tenant-scoped writes
+      lock_timeout: 5s
+
+prisma_connection_strings:
+  # Append to each of APP_DATABASE_URL / PLATFORM_ADMIN_DATABASE_URL / DATABASE_URL in .env
+  # (DevOps implements; values below sum to well under postgres.max_connections with headroom for
+  # both `app` and `worker` processes running simultaneously, per the 2-clients-per-process model
+  # in load-model.md):
+  app_runtime_client:
+    connection_limit: 10   # replaces Prisma's default (num_cpus*2+1, unbounded by config today)
+    pool_timeout: 10        # seconds — a request that can't get a pool slot within 10s should fail
+                             # cleanly (mapped 5xx) rather than hang past any caller-visible timeout
+  platform_admin_client:
+    connection_limit: 5     # admin panel is low-traffic (single SaaS-owner usage), needs less
+    pool_timeout: 10
+  # Budget check: 2 processes (app, worker) x up to (10+5) = 30 connections at full utilization,
+  # comfortably under postgres.max_connections (100) with room for ad-hoc psql/backup-script
+  # connections and future headroom before this needs revisiting.
+
+bullmq_workers:
+  # services/app/src/worker/index.ts — no concurrency option set today (BullMQ default: 1)
+  parse_nfe:
+    concurrency: 3    # independent tenants' NF-e imports don't interact — safe to parallelize now;
+                       # keep well under app_runtime_client's pool budget above (3 concurrent jobs x
+                       # whatever connections each parse job holds should stay inside headroom)
+  import_products_csv:
+    concurrency: 3    # same reasoning as parse_nfe
+  generate_monthly_charge:
+    concurrency: 1    # KEEP AT 1 — see bottleneck-analysis.md §2: this job's internal per-tenant
+                       # loop needs its own review before parallelizing; naive concurrency increase
+                       # here risks amplifying PagBank API burst load (HI-3's 10s timeout bounds a
+                       # single call, not N concurrent calls hitting PagBank's own rate limits)
+  scan_expiry_alerts:
+    concurrency: 1     # same reasoning — revisit only alongside a redesign that partitions the
+                        # per-tenant loop (bottleneck-analysis.md §2's 10x-scale note), not as an
+                        # isolated config bump
+
+container_resource_limits:
+  # No `deploy.resources`/`mem_limit`/`cpus` set anywhere today (readiness-review-ship.md §6) —
+  # recommended starting points for a 4 vCPU / 8GB VPS, leaving headroom for the host OS and Caddy:
+  postgres:
+    cpus: "1.5"
+    memory: 2g
+  redis:
+    cpus: "0.5"
+    memory: 512m   # comfortable for BullMQ + rate-limit + session/query cache at 1x scale
+                    # (bottleneck-analysis.md: Redis capacity explicitly ruled out as a near-term
+                    # bottleneck) — revisit if cache usage patterns change materially
+  app:
+    cpus: "1.5"
+    memory: 2g
+  worker:
+    cpus: "1.5"
+    memory: 2g     # NF-e XML parsing is the most memory-relevant path in this container; 2g is
+                    # generous relative to a 10MiB input file cap (H-3), revisit only if large
+                    # (near-cap) files prove memory-heavy in practice (unverified assumption)
+  caddy:
+    cpus: "0.25"
+    memory: 256m
+  # Sum: ~5.25 vCPU allocated on a 4 vCPU box is intentional over-commit (bursty workloads rarely
+  # peak simultaneously across all 5 containers) — NOT a hard guarantee; if DevOps provisions
+  # exactly 4 vCPUs, tighten postgres/app/worker to 1.0 each instead of 1.5 before relying on these
+  # figures as real limits rather than starting points.
+
+volume_growth_monitoring:
+  # Ties to alerting-thresholds.md alert #5 (disk usage on postgres_data volume) — extending scope
+  # to uploads_data too, since bottleneck-analysis.md §3 identifies it as unbounded:
+  postgres_data:
+    warn_pct: 80
+    critical_pct: 90
+  uploads_data:
+    warn_pct: 80
+    critical_pct: 90
+    recommended_retention_days: 90  # SRE recommendation pending Product/Legal confirmation against
+                                     # ADR-005/ADR-007 audit requirements before implementing
+                                     # automatic deletion — do not delete without that sign-off

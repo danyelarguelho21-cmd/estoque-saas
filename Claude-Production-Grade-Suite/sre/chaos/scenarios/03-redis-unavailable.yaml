@@ -1,0 +1,68 @@
+# Chaos Scenario 3 — Redis unavailable (queue + rate-limit + session/query cache dependency)
+#
+# Redis is a genuine single point of failure for THREE independent concerns in this system
+# (c4-container.md): BullMQ queues, the H-5 rate-limit store, and session/query cache. This
+# scenario checks whether those three concerns fail independently and gracefully, or whether one
+# masks/amplifies another.
+
+id: redis-unavailable
+risk: medium
+targets:
+  - redis
+
+steady_state_ref: ../steady-state-hypothesis.md
+
+hypothesis: >
+  With Redis down: (1) rate limiting fails OPEN by explicit design (security-engineer H-5 writeup,
+  services/app/src/lib/rate-limit.ts) — login/signup should still work, just unprotected, not
+  broken; (2) BullMQ enqueue calls (NF-e import, CSV import) should fail with a clean, user-visible
+  error on the ROUTE that tries to enqueue — not a silent accept-then-lose; (3) already-running
+  worker jobs in progress should fail cleanly and be retryable once Redis returns (HI-2), not
+  corrupt state. This is the failure mode readiness-review-ship.md §8 flagged as unverified
+  ("recommend confirming whether POST /api/nfe-imports etc. return a clean 5xx or an unhandled
+  exception when queue.add() fails against a dead Redis") — this experiment is that verification.
+
+setup: |
+  Confirm Redis is currently healthy and queues are empty/idle (steady-state baseline).
+
+action: |
+  docker compose stop redis
+  # Immediately exercise all three affected paths:
+  # 1. Rate-limited endpoint (should still succeed — fails open):
+  curl -s -o /dev/null -w "login: %{http_code}\n" -X POST http://localhost:3000/api/auth/login \
+    -H "Content-Type: application/json" -d '{"email":"test@example.com","password":"wrong"}'
+  # 2. Enqueue-dependent endpoint (should fail CLEANLY, not hang or 500 with a raw stack trace):
+  curl -s -o /dev/null -w "nfe-import: %{http_code}\n" -X POST http://localhost:3000/api/nfe-imports \
+    -H "Cookie: <valid session>" -F "file=@test-nfe.xml"
+  # 3. Worker behavior with Redis gone:
+  docker compose logs worker --since 30s
+
+expected_behavior: |
+  - `POST /api/auth/login` still returns 200/401 as appropriate (rate-limit fail-open confirmed
+    working as designed, not a bug — this is the ONE place "fails open" is correct/intentional).
+  - `POST /api/nfe-imports` returns a mapped 5xx (ideally 503, "try again shortly") — NOT a raw
+    unhandled-exception 500, and does NOT silently return 200/202 while quietly dropping the job.
+  - `worker` container does not crash-loop — BullMQ's ioredis connection should retry/reconnect,
+    not take the whole process down. Confirm via `docker compose ps worker` staying `healthy`
+    (relative to its pgrep-based check — see readiness-review-ship.md §1 caveat that this
+    healthcheck can't actually see "queue consumption is degraded," which this experiment
+    illustrates concretely).
+
+abort_if: >
+  `app` or `worker` container crash-loops (not just individual requests failing) for longer than 2
+  minutes, OR any write appears to have been silently accepted and lost (confirm via steady-state's
+  data-integrity check before and after).
+
+recovery: |
+  docker compose start redis
+  # BullMQ/ioredis should auto-reconnect; confirm:
+  docker compose logs worker --since 1m | grep -i redis
+
+recovery_verification: |
+  Re-submit the NF-e import that failed during the outage and confirm it now succeeds end to end.
+  Re-run the steady-state baseline block, confirm queue depths return to 0/baseline.
+
+follow_up: >
+  If `POST /api/nfe-imports` (or the CSV-import equivalent) does NOT return a clean mapped error,
+  file it as a Medium/High finding for Software Engineer — this is the concrete gap
+  readiness-review-ship.md §8 flagged as unverified, now either confirmed-fine or confirmed-broken.

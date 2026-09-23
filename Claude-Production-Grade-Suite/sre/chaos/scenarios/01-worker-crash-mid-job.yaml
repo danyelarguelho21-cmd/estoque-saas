@@ -1,0 +1,65 @@
+# Chaos Scenario 1 — Worker process crash mid-job
+#
+# Format note: this system is Docker Compose on a single VPS, not Kubernetes (ADR-001/003) — no
+# Chaos Mesh/Litmus/Gremlin CRDs apply. Every "action" below is a real command runnable by a
+# solo/pair operator with SSH access to the VPS (or a local dev stack). This is the injection
+# mechanism itself, not a translation layer over a k8s-native tool.
+
+id: worker-crash-mid-job
+risk: low
+targets:
+  - worker
+
+steady_state_ref: ../steady-state-hypothesis.md
+
+hypothesis: >
+  Killing the worker container while it is actively processing a job (NF-e parse, billing charge
+  generation, or expiry scan) results in the job being retried automatically per HI-2's
+  defaultJobOptions (attempts: 3, exponential backoff from 5s) once the worker restarts — with no
+  permanently-lost job and no duplicate side effects (per HI-4's atomic idempotency guard, for the
+  webhook/billing path specifically). This directly exercises code-reviewer finding HI-2, the
+  highest-value chaos test for validating it actually closes the gap it claims to close (see
+  ../../capacity/hi2-cr1-slo-impact-review.md).
+
+setup: |
+  1. Upload a moderately large NF-e XML (enough items that parsing takes >5s — check
+     job-nfe-import-latency's p50_start_delay of 30s as a rough sizing guide) via
+     POST /api/nfe-imports, OR wait for/manually trigger scan-expiry-alerts.
+  2. Confirm the job is in BullMQ's `active` state before proceeding:
+     docker compose exec redis redis-cli LLEN bull:nfe-import:active
+
+action: |
+  # Hard-kill the worker container mid-job (SIGKILL, not SIGTERM — the worst case, since
+  # readiness-review-ship.md §2 confirms there is no SIGTERM handler in worker/index.ts today,
+  # so a graceful stop and a hard kill currently behave almost identically anyway).
+  docker compose kill worker
+  sleep 2
+  docker compose up -d worker
+
+expected_behavior: |
+  - The killed job is neither "completed" nor cleanly "failed" — BullMQ marks it stalled once its
+    lock expires (default lockDuration ~30s) and, because DEFAULT_JOB_OPTIONS sets attempts: 3, it
+    is automatically re-queued and re-attempted by the restarted worker — confirm via:
+      docker compose exec redis redis-cli LLEN bull:nfe-import:failed   # should stay 0 for this job
+    and by watching `docker compose logs worker` for the job completing successfully on a
+    subsequent attempt.
+  - No duplicate `nfe_imports` row or double-applied stock movement — the parse job's own
+    idempotency (re-parsing the same file from the shared `uploads_data` volume) is what protects
+    this, not a queue-level guard — confirm the import's item count matches expectations exactly
+    once, not twice.
+  - If the killed job was `generate-monthly-charge` or a PagBank webhook reconciliation: confirm
+    via `audit_log` (steady-state check) that no duplicate charge/audit entry was created — this is
+    the concrete test of HI-4's atomic-update fix under a REAL crash, not just the unit-level
+    concurrent-POST test QA already has.
+
+abort_if: >
+  Job lands in BullMQ's `failed` state after exhausting all 3 attempts for a scenario that should
+  have succeeded (i.e., the crash-recovery path itself is broken, not the job's own logic) — this
+  is the actual bug the experiment exists to catch; stop and file it, don't retry the experiment
+  hoping for a different result.
+
+recovery_verification: |
+  Re-run the steady-state baseline block. Additionally:
+    docker compose logs worker --since 5m | grep -i error
+  and confirm the specific job that was killed shows exactly one successful completion log line,
+  not zero and not two.

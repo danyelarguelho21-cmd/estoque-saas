@@ -1,0 +1,82 @@
+# Chaos Scenario 5 — Disk full on the VPS
+#
+# This is not a hypothetical failure mode for this project — the orchestrator brief for this task
+# explicitly notes this exact incident type was hit during THIS project's own development session.
+# On a single-VPS, single-disk topology (ADR-001/003) with Postgres data, uploaded NF-e/CSV files
+# (uploads_data volume, no aggregate size cap — readiness-review-ship.md §6), and Docker's own
+# image/layer/log storage all sharing one disk, this is one of the highest-probability real
+# incidents this system will hit in production, not an exotic edge case.
+
+id: disk-full-vps
+risk: high
+targets:
+  - postgres
+  - app
+  - worker
+  - host
+
+steady_state_ref: ../steady-state-hypothesis.md
+
+hypothesis: >
+  As disk usage approaches 100%, the system should degrade in a predictable, recoverable order —
+  Postgres should refuse new writes cleanly (not corrupt data), the app should surface a clear
+  error to users (not hang or silently accept-and-lose writes), and once space is freed, all
+  containers should resume normal operation WITHOUT requiring a full stack rebuild or data loss.
+  Alert #5 in alerting-thresholds.md (disk usage on the postgres_data volume, warn 80%/critical
+  90%) should have caught this well before the failure point this experiment forces.
+
+setup: |
+  **Run this ONLY against a disposable/local dev stack or a dedicated staging VPS — never against
+  a production disk with real tenant data, for obvious reasons.** Record current disk usage:
+    df -h /var/lib/docker   # or wherever the Docker data-root lives on the VPS
+
+action: |
+  # Fill the disk in a controlled, boundable way (NOT `dd` against a live mount forever — use a
+  # sized fallocate so the experiment has a known, reversible endpoint):
+  fallocate -l $(( $(df --output=avail / | tail -1) * 1024 * 95 / 100 )) /tmp/chaos-disk-fill.img
+  df -h /
+  # Now exercise real write paths:
+  curl -s -o /dev/null -w "stock-entry: %{http_code}\n" -X POST http://localhost:3000/api/stock/entries \
+    -H "Content-Type: application/json" -H "Cookie: <valid session>" \
+    -d '{"productId":"<test>","storeId":"<test>","quantity":1}'
+  curl -s -o /dev/null -w "nfe-upload: %{http_code}\n" -X POST http://localhost:3000/api/nfe-imports \
+    -H "Cookie: <valid session>" -F "file=@test-nfe.xml"
+
+expected_behavior: |
+  - Postgres write attempts fail with a clear "no space left on device" / disk-full error surfaced
+    up through Prisma as a mapped 5xx to the API caller — NOT data corruption, NOT a hung request.
+  - `docker compose logs postgres` shows the disk-full condition explicitly (Postgres is generally
+    good about this — confirm it holds true here, don't assume).
+  - The NF-e upload path (writes to `uploads_data`, a SEPARATE volume from `postgres_data`) may
+    fail independently/differently from the Postgres write — confirm whether the app distinguishes
+    "upload storage full" from "database full" in its error response, or conflates them into one
+    generic 500 (worth knowing either way for the runbook).
+  - `docker compose ps` — containers should NOT crash-loop merely from disk pressure; Postgres in
+    particular should stay up and refuse writes cleanly rather than crashing.
+
+abort_if: >
+  Any container crash-loops in a way that doesn't recover cleanly after disk space is freed (see
+  recovery) — if `postgres` needs a manual intervention beyond restart to become healthy again
+  after the experiment, stop, do NOT proceed to further chaos rounds in the same game day session,
+  and treat this as the top-priority finding from the entire game day.
+
+recovery: |
+  rm /tmp/chaos-disk-fill.img
+  df -h /
+  docker compose restart postgres app worker   # confirm whether a restart is even necessary —
+                                                 # record this, it's operationally relevant
+
+recovery_verification: |
+  Re-run the steady-state baseline block. Re-submit the stock-entry and NF-e-upload requests that
+  failed during the experiment and confirm they now succeed. Check for any partially-written/
+  orphaned data from the failed attempts (e.g., an `nfe_imports` row stuck in a state that implies
+  a file was supposed to exist but doesn't, because the upload failed after the DB row was created
+  but before the file write completed, or vice versa — this ORDERING is worth confirming explicitly
+  against the actual code path, not assumed).
+
+follow_up: >
+  This experiment's real value is validating alert #5 fires with enough lead time (80%/90%
+  thresholds) to act BEFORE reaching the failure point this experiment forces to 95%+. If alert #5
+  isn't wired up yet (production-deployment.md §6 confirms no monitoring stack exists yet to
+  actually fire it), this experiment is the concrete argument for prioritizing that wiring — see
+  docs/runbooks/disk-cheio-vps.md (new, this SHIP pass) for the live-incident response.
