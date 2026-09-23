@@ -14,6 +14,36 @@ export interface UploadNfeImportResult {
   importId: string;
 }
 
+// Liga ao item da NF-e um produto criado pelo operador durante a conferência. Criar o produto
+// sem gravar matchedProductId deixava o item permanentemente unmatched e mantinha a confirmação
+// da importação desabilitada.
+export async function linkNfeImportItemToProduct(
+  tenantId: string,
+  importId: string,
+  itemId: string,
+  productId: string,
+): Promise<void> {
+  await withTenant(tenantId, async (tx) => {
+    const nfeImport = await tx.nfeImport.findUnique({ where: { id: importId } });
+    if (!nfeImport) throw new NotFoundError("Import de NF-e não encontrado.");
+    if (nfeImport.status !== "pending_review") {
+      throw new ValidationError(`Import não está em conferência (status atual: ${nfeImport.status}).`);
+    }
+
+    const item = await tx.nfeImportItem.findFirst({ where: { id: itemId, nfeImportId: importId } });
+    if (!item) throw new NotFoundError("Item da NF-e não encontrado.");
+    if (item.status !== "unmatched") throw new ConflictError("Este item já está vinculado a um produto.");
+
+    const product = await tx.product.findFirst({ where: { id: productId, deletedAt: null } });
+    if (!product) throw new NotFoundError("Produto não encontrado.");
+
+    await tx.nfeImportItem.update({
+      where: { id: itemId },
+      data: { matchedProductId: product.id, status: "created" },
+    });
+  });
+}
+
 // Upload de XML de NF-e (api/openapi/stock.yaml#uploadNfeImport). Apenas grava o arquivo + cria o
 // registro em status pending_parse — o parsing em si acontece de forma assíncrona no job
 // `parse-nfe` (ADR-005 — não bloquear a requisição HTTP com XMLs grandes).

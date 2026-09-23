@@ -39,6 +39,8 @@ export const stockApi = {
     return api.post<{ importId: string }>("/api/nfe-imports", form);
   },
   getNfeImport: (importId: string) => api.get<NfeImport>(`/api/nfe-imports/${importId}`),
+  linkNfeImportItemToProduct: (importId: string, itemId: string, productId: string) =>
+    api.patch<void>(`/api/nfe-imports/${importId}/items/${itemId}`, { productId }),
   confirmNfeImport: (importId: string, items: NfeConfirmItemInput[]) =>
     api.post<void>(`/api/nfe-imports/${importId}/confirm`, { items }),
 

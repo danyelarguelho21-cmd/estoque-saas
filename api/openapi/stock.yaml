@@ -135,6 +135,32 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/NfeImport" }
         "404": { $ref: "_common.yaml#/components/responses/NotFound" }
+  /api/nfe-imports/{importId}/items/{itemId}:
+    parameters:
+      - name: importId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: itemId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      summary: Vincula a um item da NF-e um produto criado durante a conferência
+      operationId: linkNfeImportItemToProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId]
+              properties:
+                productId: { type: string, format: uuid }
+      responses:
+        "200": { description: Produto vinculado ao item da NF-e }
+        "404": { $ref: "_common.yaml#/components/responses/NotFound" }
+        "409": { description: Item já vinculado a um produto }
   /api/nfe-imports/{importId}/confirm:
     parameters:
       - name: importId

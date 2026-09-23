@@ -10,6 +10,7 @@ export { parseNfeXml, type ParsedNfe, type ParsedNfeItem } from "./nfe-parser";
 export {
   uploadNfeImport,
   processNfeImportJob,
+  linkNfeImportItemToProduct,
   confirmNfeImport,
   type UploadNfeImportResult,
   type ConfirmNfeImportItemOverride,

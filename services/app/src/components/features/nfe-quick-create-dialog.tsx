@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { catalogApi } from "@/lib/api/catalog";
+import { stockApi } from "@/lib/api/stock";
 import type { NfeImportItem } from "@/lib/api/types";
 
 interface NfeQuickCreateDialogProps {
+  importId: string;
   item: NfeImportItem;
   onCreated: () => void;
 }
@@ -17,7 +19,7 @@ interface NfeQuickCreateDialogProps {
  * Cadastro rápido de produto a partir de um item não reconhecido do XML (ADR-005) — sem sair
  * da tela de conferência. O SKU/nome/código de barras vêm pré-preenchidos do XML.
  */
-export function NfeQuickCreateDialog({ item, onCreated }: NfeQuickCreateDialogProps) {
+export function NfeQuickCreateDialog({ importId, item, onCreated }: NfeQuickCreateDialogProps) {
   const [open, setOpen] = useState(false);
   const [sku, setSku] = useState(item.cProd);
   const [name, setName] = useState(item.xProd);
@@ -31,12 +33,22 @@ export function NfeQuickCreateDialog({ item, onCreated }: NfeQuickCreateDialogPr
     setSubmitting(true);
     setError(null);
     try {
-      await catalogApi.createProduct({
-        sku,
-        name,
-        unitOfMeasure,
-        ...(barcode ? { barcode } : {}),
-      });
+      let product;
+      try {
+        product = await catalogApi.createProduct({
+          sku,
+          name,
+          unitOfMeasure,
+          ...(barcode ? { barcode } : {}),
+        });
+      } catch {
+        // Se o SKU já existir, reutiliza somente um produto com o mesmo SKU e EAN do XML.
+        // Assim o operador não precisa duplicar o cadastro para destravar a conferência.
+        const existingProducts = await catalogApi.listProducts({ search: sku, limit: 100 });
+        product = existingProducts.items.find((candidate) => candidate.sku === sku && candidate.barcode === (barcode || undefined));
+        if (!product) throw new Error("Não existe produto com este SKU e código de barras para vincular.");
+      }
+      await stockApi.linkNfeImportItemToProduct(importId, item.id, product.id);
       setOpen(false);
       onCreated();
     } catch {

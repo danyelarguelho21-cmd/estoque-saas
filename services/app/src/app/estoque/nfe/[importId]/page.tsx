@@ -168,6 +168,7 @@ export default function NfeReviewPage({ params }: { params: Promise<{ importId: 
                           </Badge>
                           {data.status === "pending_review" && (
                             <NfeQuickCreateDialog
+                              importId={importId}
                               item={item}
                               onCreated={() => {
                                 notify({ title: "Produto cadastrado — atualizando conferência", variant: "info" });
