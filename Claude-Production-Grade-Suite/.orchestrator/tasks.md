@@ -16,7 +16,7 @@
 | T6c | Security Engineer — code audit + dep scan | T3a, T3b, T6a | completed (agent ad8fa8a2fa5905714, worktree — pending merge) |
 | T6d | Code Reviewer — actual review | T3a, T3b, T6b | completed (agent a467395d59307a6d9, worktree — pending merge) |
 | T7 | DevOps — IaC + CI/CD | T5b, T6c, T6d | pending |
-| T8 | Remediation — HARDEN fixes | T5b, T6c, T6d | pending |
+| T8 | Remediation — HARDEN fixes | T5b, T6c, T6d | completed (main tree, this session — see receipt below) |
 | T9b | SRE — chaos + capacity | T7, T8, T9a | pending |
 | T10 | Data Scientist (conditional — não aplicável, sem LLM/ML) | T7, T8 | skipped |
 | T11 | Technical Writer — docs | T9b | pending |
@@ -50,6 +50,32 @@ curl/Node-fetch/`docker compose logs` antes de qualquer alteração em `tests/`:
 - **H-1 (High)** — recurso inexistente retorna 500 em vez de 404 (Prisma `P2025` de
   `findUniqueOrThrow`/`findFirstOrThrow` não capturado por `handleRoute()`), sistêmico em ≥6 call
   sites (stores, users, tenant, transfers, billing×2). Viola o contrato documentado de NotFound.
+
+## HARDEN Wave B — T8 (Remediation) concluído
+
+Todos os findings Critical/High de T5b (QA), T6c (Security) e T6d (Code Review) corrigidos e
+verificados de ponta a ponta contra stack real (Postgres 18 + Redis 7 em containers, app+worker
+locais apontando para eles) — 126 testes verdes (75 unit + 52 integration), typecheck/lint limpos
+em todo o monorepo. Commit `fb3e338`.
+
+- **CR-1 (Critical, code review)** — lost-update race + TOCTOU de oversell no saldo de estoque.
+  `pg_advisory_xact_lock` por (tenant, produto, loja) em toda operação que lê/escreve o saldo
+  derivado; transferências travam origem+destino em ordem determinística (evita deadlock). Novo
+  teste de concorrência real (`tests/integration/stock-concurrency.test.ts`).
+- **C-1 (Critical, QA)** — EACCES no upload de NF-e em Docker. `Dockerfile` faz chown do diretório
+  de upload antes de `USER app`; `docker-compose.yml` monta volume nomeado compartilhado entre
+  `app`/`worker` com `UPLOADS_DIR` absoluto.
+- **H-1 (High, QA)** — Prisma P2025 agora mapeado centralmente para 404 em `handleRoute()`.
+- **HI-1..HI-4 (High, code review)** — N+1 queries (5 call sites) batched; BullMQ com
+  retry/backoff; PagBank com timeout de 10s; idempotência do webhook PagBank trocada de
+  check-then-act para UPDATE atômico (`updateMany` + count), com teste de concorrência real.
+
+Bugs de infraestrutura de teste encontrados e corrigidos no caminho (nenhum teste HTTP-driven era
+verificável antes disto contra um container realmente limpo): `docker-compose.test.yml` com layout
+de dados pré-Postgres-18 (crash loop); `resetTestDatabase()` só aplicava 1 de 9 migrations (roles
+`app_user`/`platform_admin_role` nunca existiam); race de `DROP SCHEMA` concorrente entre arquivos
+de teste paralelos (corrigido com advisory lock + double-checked locking); fixture de `daysUntil`
+flaky por usar UTC em vez de data local.
 
 Findings completos com repro + fix sugerido em `Claude-Production-Grade-Suite/qa-engineer/findings/
 {critical,high,medium,low}.md`. Dois gaps P1 do risk register fechados com suítes novas reais
