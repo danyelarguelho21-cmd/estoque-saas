@@ -42,6 +42,18 @@ export async function withTenant<T>(
   });
 }
 
+// Generic version of the same contention fix as stock/balance.ts's lockStockRow (CR-1) —
+// pg_advisory_xact_lock keyed on an arbitrary string, released automatically at
+// commit/rollback. Use whenever a transaction reads a "is X due/needed?" state and then writes a
+// derived row based on it, and two concurrent callers (a cron run overlapping a manual trigger, a
+// double-submitted form, a retried job) could both read the same "due" state before either
+// commits — the exact shape of bug CR-1/HI-4 fixed for stock and webhook idempotency
+// respectively. Domain-specific helpers (like lockStockRow) may wrap this with a narrower key
+// convention; this is the primitive for anywhere else that needs the same guarantee.
+export async function lockOnKey(tx: TenantScopedClient, key: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+}
+
 // Uso restrito: apenas rotinas de plataforma (platform_admins, plans) que não são tenant-scoped
 // operam diretamente com basePrisma, sem set_config — essas tabelas estão fora do RLS (ADR-002).
 export const platformPrisma = basePrisma;

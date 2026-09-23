@@ -69,14 +69,23 @@ export async function createSubscription(tenantId: string, input: CreateSubscrip
       return updated;
     }
 
+    // BUG FIX (found via manual e2e testing): this branch used to ALSO set currentPeriodStart/End
+    // here (currentPeriodStart=now, currentPeriodEnd=+1 month) — as if a period had already been
+    // paid for. generateChargeForTenant()'s own due-check is `!currentPeriodEnd ||
+    // currentPeriodEnd <= now`, so setting a future currentPeriodEnd here made a BRAND NEW
+    // pix_boleto subscription permanently NOT due until a month had passed — the very act of
+    // choosing pix/boleto at checkout disabled the "primeiro ciclo gerado automaticamente" promise
+    // (cadastro/page.tsx) for 30 days, so "Assinatura → Faturas" stayed empty indefinitely.
+    // Leaving both fields untouched here (they're already null from signup.ts's initial trialing
+    // row) keeps this subscription "due" so the immediate job enqueued below (and the daily
+    // generate-monthly-charge cron as a backstop) actually generates the first invoice.
+    // generateChargeForTenant() is what correctly sets these fields once a charge is generated.
     const updated = await tx.subscription.update({
       where: { id: current.id },
       data: {
         planId: plan.id,
         status: "active",
         paymentMethod: "pix_boleto",
-        currentPeriodStart: new Date(),
-        currentPeriodEnd: addOneMonth(new Date()),
       },
     });
     await recordAudit(tx, { tenantId, userId: null, entityType: "subscription", entityId: updated.id, action: "update", after: { status: updated.status, paymentMethod: "pix_boleto" } });

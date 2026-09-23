@@ -224,6 +224,15 @@ export interface Sale {
   items: SaleItem[];
 }
 
+// POST /api/sales's actual response shape (services/app/src/modules/sales/sales.ts's
+// SaleResult) — NOT a full Sale object, just enough to redirect/confirm. Was previously
+// mis-typed as `Sale` here, which let the caller read a non-existent `.id` field (real bug found
+// via manual e2e testing: post-sale redirect went to /vendas/undefined).
+export interface CreateSaleResult {
+  saleId: string;
+  totalAmountCents: number;
+}
+
 export interface CustomerInput {
   name: string;
   document?: string;

@@ -39,7 +39,11 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/SaleInput" }
       responses:
-        "201": { description: Venda registrada }
+        "201":
+          description: Venda registrada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateSaleResult" }
         "409":
           description: Estoque insuficiente para algum item
           content:
@@ -131,6 +135,17 @@ components:
               batchId: { type: string, format: uuid, nullable: true, description: "Se omitido em produto perecível, aplica sugestão FEFO automaticamente" }
               quantity: { type: integer, minimum: 1 }
               unitPriceCents: { type: integer, minimum: 0 }
+    CreateSaleResult:
+      type: object
+      description: >-
+        Resposta de POST /api/sales — NÃO é o objeto Sale completo (esse schema nunca estava
+        declarado aqui, o que permitiu o frontend assumir errado que a resposta era um Sale
+        completo e ler um campo "id" inexistente; bug real encontrado em teste manual e2e).
+        Use GET /api/sales/{saleId} para o objeto Sale completo.
+      required: [saleId, totalAmountCents]
+      properties:
+        saleId: { type: string, format: uuid }
+        totalAmountCents: { type: integer }
     Sale:
       type: object
       properties:

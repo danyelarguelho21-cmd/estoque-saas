@@ -86,7 +86,7 @@ export default function NewSalePage() {
         })),
       });
       notify({ title: "Venda registrada", variant: "success" });
-      router.push(`/vendas/${sale.id}`);
+      router.push(`/vendas/${sale.saleId}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setError("Estoque insuficiente para um dos itens. Ajuste a quantidade e tente novamente.");

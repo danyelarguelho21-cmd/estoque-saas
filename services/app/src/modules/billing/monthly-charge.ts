@@ -1,4 +1,4 @@
-import { listActiveTenantIds, platformPrisma, recordAudit, withTenant } from "@estoque-saas/shared";
+import { listActiveTenantIds, lockOnKey, platformPrisma, recordAudit, withTenant } from "@estoque-saas/shared";
 import { getPaymentProvider } from "./provider";
 
 // Processor do job `generate-monthly-charge` (worker) — sequence-billing.md: para tenants com
@@ -22,6 +22,12 @@ export async function generateMonthlyCharges(): Promise<{ generated: number; ski
 
 async function generateChargeForTenant(tenantId: string): Promise<boolean> {
   return withTenant(tenantId, async (tx) => {
+    // Same contention fix as CR-1/HI-4 (see lockOnKey's doc comment, libs/shared/src/db/client.ts):
+    // the daily cron and an immediate on-checkout enqueue (POST /api/billing/subscription) can now
+    // both target the SAME tenant close together — without this, both could read `due` before
+    // either commits its invoice, generating two charges for one billing cycle.
+    await lockOnKey(tx, `generate-monthly-charge:${tenantId}`);
+
     const subscription = await tx.subscription.findFirst({ orderBy: { createdAt: "desc" } });
     if (!subscription || subscription.paymentMethod !== "pix_boleto") return false;
     if (subscription.status !== "active" && subscription.status !== "trialing") return false;

@@ -1,5 +1,5 @@
 import { api, buildQuery } from "./client";
-import type { Customer, CustomerInput, Paginated, Sale, SaleInput } from "./types";
+import type { CreateSaleResult, Customer, CustomerInput, Paginated, Sale, SaleInput } from "./types";
 
 export const salesApi = {
   listSales: (
@@ -11,7 +11,7 @@ export const salesApi = {
       to?: string | undefined;
     } = {},
   ) => api.get<Paginated<Sale> & { totalAmountCents: number }>(`/api/sales${buildQuery(params)}`),
-  createSale: (input: SaleInput) => api.post<Sale>("/api/sales", input),
+  createSale: (input: SaleInput) => api.post<CreateSaleResult>("/api/sales", input),
   getSale: (saleId: string) => api.get<Sale>(`/api/sales/${saleId}`),
 
   listCustomers: (params: { cursor?: string | undefined; limit?: number | undefined; search?: string | undefined } = {}) =>

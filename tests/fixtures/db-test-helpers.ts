@@ -43,9 +43,34 @@ const MIGRATION_FILES = [
   "0010_role_timeouts.sql",
 ].map((f) => path.join(REPO_ROOT, "schemas/migrations", f));
 
+// GUARD (root-cause fix, found via manual e2e testing): this module's seed helpers
+// (seedPlan/seedTenant/etc.) INSERT unconditionally with no existence check and no per-call
+// uniqueness for reference-ish data like plan names — safe against the ephemeral test container
+// (wiped on every `docker compose down -v`), but the doc comment on resetTestDatabase() below
+// used to describe "the real dev Docker stack" as a supported SHARED/PERSISTENT mode, on the
+// (violated) assumption that every seed helper already used a unique-per-call identifier. It
+// didn't for plans: an earlier HARDEN pass that pointed TEST_DATABASE_URL at the dev database
+// (port 5432) accumulated 49 duplicate plan rows and 151 test tenants over repeated runs, which
+// then showed up on the real /onboarding and /assinatura screens. Closing this permanently: any
+// connection string whose database name isn't literally "estoque_saas_test" is refused outright,
+// the moment this module is imported — no more "shared/persistent mode", ever, for any reason.
+function assertIsIsolatedTestDatabase(url: string, envVarName: string): void {
+  const dbName = new URL(url).pathname.replace(/^\//, "");
+  if (dbName !== "estoque_saas_test") {
+    throw new Error(
+      `[db-test-helpers] REFUSING to run: ${envVarName} points at database "${dbName}", not ` +
+        `"estoque_saas_test". This module's seed helpers are NOT safe to run against any other ` +
+        `database (see this guard's own comment for the incident that made this mandatory) — ` +
+        `point ${envVarName} at the isolated container from tests/integration/docker-compose.test.yml ` +
+        `(port 5433) instead.`,
+    );
+  }
+}
+
 export const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ??
   "postgresql://estoque_app:devpassword@localhost:5433/estoque_saas_test";
+assertIsIsolatedTestDatabase(TEST_DATABASE_URL, "TEST_DATABASE_URL");
 
 /** The restricted, NOBYPASSRLS `app_user` role connection (schemas/migrations/0003) — the SAME
  * role the real application/worker connect as in runtime (APP_DATABASE_URL, see
@@ -57,28 +82,31 @@ export const TEST_DATABASE_URL =
 export const TEST_APP_DATABASE_URL =
   process.env.TEST_APP_DATABASE_URL ??
   `postgresql://app_user:${TEST_APP_DB_PASSWORD}@localhost:5433/estoque_saas_test`;
+assertIsIsolatedTestDatabase(TEST_APP_DATABASE_URL, "TEST_APP_DATABASE_URL");
 
 /** The `platform_admin_role` connection (BYPASSRLS, schemas/migrations/0006) — used by the admin
  * panel module only (services/app/src/modules/admin), never by tenant-scoped tests. */
 export const TEST_PLATFORM_ADMIN_DATABASE_URL =
   process.env.TEST_PLATFORM_ADMIN_DATABASE_URL ??
   `postgresql://platform_admin_role:${TEST_PLATFORM_ADMIN_DB_PASSWORD}@localhost:5433/estoque_saas_test`;
+assertIsIsolatedTestDatabase(TEST_PLATFORM_ADMIN_DATABASE_URL, "TEST_PLATFORM_ADMIN_DATABASE_URL");
 
 /**
  * Ensures the test database has the full schema + RLS policies (0001_init.sql, which is the
  * complete 21-table reference — see its header comment) ready to use. Call once per test file
  * (or per suite) in beforeAll.
  *
- * Two modes, auto-detected by probing for the `tenants` table:
- *  - FRESH/EPHEMERAL database (e.g. `tests/integration/docker-compose.test.yml`, tmpfs, empty on
- *    every container start): drops+recreates `public` and applies 0001_init.sql from scratch.
- *  - SHARED/PERSISTENT database (e.g. the real dev Docker stack — `docker compose up -d`, already
- *    migrated via `prisma migrate` + `scripts/apply-role-grants.mjs`, already seeded with Plans
- *    and possibly manually-created tenants): a `DROP SCHEMA ... CASCADE` here would destroy that
- *    seeded/manual data out from under the running app and any other consumer of the same
- *    database. In this mode resetTestDatabase() is a no-op verification only — tests isolate via
- *    unique fixture identifiers (randomCnpj()/randomSuffix()) instead of a fresh schema per file,
- *    same pattern every seed* helper below already uses.
+ * Two modes, auto-detected by probing for the `tenants` table — both ALWAYS against the isolated
+ * "estoque_saas_test" database (assertIsIsolatedTestDatabase above refuses anything else, no
+ * exceptions — see that guard's comment for why):
+ *  - FRESH database (e.g. right after `docker compose -f tests/integration/docker-compose.test.yml
+ *    up`, tmpfs, empty): drops+recreates `public` and applies every migration from scratch.
+ *  - ALREADY-MIGRATED database (a prior test file in the same run, or a prior run against the
+ *    same still-running test container, already did the above): no-op fast path. Tests still
+ *    isolate via unique fixture identifiers (randomCnpj()/randomSuffix()) rather than a fresh
+ *    schema per file — same pattern every seed* helper below uses (plans are the one deliberate
+ *    exception: they're few, near-static reference data, seeded once per fresh container by
+ *    seedPlan() itself, not per-test).
  *
  * Requires a real Postgres reachable at TEST_DATABASE_URL — see tests/integration/docker-compose.test.yml.
  * If unreachable, throws; callers should let the test fail loudly (an integration suite that
