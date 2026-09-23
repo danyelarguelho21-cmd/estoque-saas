@@ -1,0 +1,72 @@
+# Chaos Scenario 4 — PagBank webhook flood + duplicate/concurrent delivery
+#
+# Directly targets the ASSUMPTION flagged in sli-definitions.yaml (PagBank's real retry/timeout
+# policy is undocumented — see the bottom of that file) and validates HI-4's fix (atomic
+# updateMany idempotency guard, services/app/src/modules/billing/webhook.ts:50-72) under REAL
+# concurrent duplicate delivery, not just QA's existing sequential-call test.
+
+id: pagbank-webhook-flood-duplicate
+risk: medium
+targets:
+  - app
+  - worker
+
+steady_state_ref: ../steady-state-hypothesis.md
+
+hypothesis: >
+  (a) A burst of webhook deliveries (simulating a retry storm from an unknown PagBank retry
+  policy) is ack'd within pagbank-webhook-ack-slo's p95 2s / hard_ceiling 5s, and does not
+  overwhelm the shared worker process to the point of starving other tenants' billing/alert jobs
+  (see capacity/bottleneck-analysis.md §3 on the shared-worker blast radius). (b) TWO genuinely
+  concurrent deliveries of the SAME event (same gatewayEventId) result in exactly ONE applied
+  state change and ONE audit_log entry, not two — this is HI-4's fix under real HTTP concurrency,
+  not a unit test.
+
+setup: |
+  Prepare a valid, correctly-signed webhook payload (same shape QA's
+  tests/integration/webhook-idempotency.test.ts already exercises sequentially) for a known test
+  subscription. Record the subscription's/invoice's current state and audit_log row count.
+
+action: |
+  # Part A — flood: N rapid sequential deliveries (simulates an aggressive retry policy)
+  for i in $(seq 1 30); do
+    curl -s -o /dev/null -w "%{http_code} " -X POST https://<domain>/api/webhooks/pagbank \
+      -H "Content-Type: application/json" -d @webhook-payload.json &
+  done
+  wait
+  echo
+
+  # Part B — genuine concurrency: fire the exact SAME event twice in true parallel (this is the
+  # part QA's existing test does NOT cover — see HI-4 writeup, "sequential calls can never race")
+  curl -s -X POST https://<domain>/api/webhooks/pagbank -H "Content-Type: application/json" \
+    -d @webhook-payload.json &
+  curl -s -X POST https://<domain>/api/webhooks/pagbank -H "Content-Type: application/json" \
+    -d @webhook-payload.json &
+  wait
+
+expected_behavior: |
+  - All 32 requests (30 flood + 2 concurrent) return 200 within pagbank-webhook-ack-slo's
+    thresholds (p95 2s, ceiling 5s) — ack is fast because it enqueues, per ADR-004's design intent,
+    not because it does the reconciliation inline.
+  - Exactly ONE subscription/invoice state transition applied — confirm the row's state matches
+    the payload's intent, not "flipped back and forth."
+  - Exactly ONE new audit_log row for this event (query: steady-state's duplicate-audit-log check,
+    scoped to this event's entity_id) — this is the direct pass/fail signal for HI-4.
+  - Billing/alert queue depth for OTHER (non-test) tenants does not show a sustained spike during
+    the flood — if it does, that's evidence the shared-worker-process design (ADR-001) needs a
+    per-queue concurrency/priority lane before real webhook volume arrives, not just a theoretical
+    future concern (see capacity/bottleneck-analysis.md §3).
+
+abort_if: >
+  More than one state transition or more than one audit_log entry is recorded for the same event
+  (HI-4 regressed or was incompletely fixed) — this is a Critical-severity regression, escalate
+  immediately, do not just note it and move on to the next round.
+
+recovery_verification: |
+  Re-run steady-state's audit_log duplicate check across the full experiment window. Confirm
+  `bull:billing:wait` (or the queue the webhook enqueues into) has drained to 0.
+
+follow_up: >
+  If ack latency degrades under the 30-request flood, this directly informs the "webhook volume"
+  row in capacity/load-model.md — record the actual p95/p99 observed, don't leave it as a
+  theoretical projection once real data exists from this experiment.

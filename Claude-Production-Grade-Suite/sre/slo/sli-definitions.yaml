@@ -283,3 +283,17 @@ slos:
 #   3. Before GA/first paying customer: re-verify by contacting PagBank support
 #      or triggering a controlled webhook failure in sandbox and observing
 #      actual retry behavior. Update this doc with verified numbers.
+
+# ---------------------------------------------------------------------
+# SHIP-PHASE ADDENDUM (T9b, 2026-09-22) — HI-2/CR-1 reviewed, targets unchanged
+# ---------------------------------------------------------------------
+# code-reviewer's HARDEN-phase fixes HI-2 (BullMQ defaultJobOptions: attempts 3,
+# exponential backoff from 5s — libs/shared/src/queues/index.ts) and CR-1
+# (pg_advisory_xact_lock on stock writes — services/app/src/modules/stock/balance.ts)
+# were reviewed against every SLO above for whether they change what's achievable.
+# Conclusion: no target in this file needs to change. Full reasoning, including the
+# specific interaction between CR-1's lock and the (currently unconfigured)
+# Postgres connection pool/lock_timeout gap, is in
+# Claude-Production-Grade-Suite/sre/capacity/hi2-cr1-slo-impact-review.md — read
+# that before assuming job-alert-scan-slo's 60s p95 or web-write-latency-slo's
+# 1500ms p95 need retuning because of these fixes. They don't, today, at 1x scale.

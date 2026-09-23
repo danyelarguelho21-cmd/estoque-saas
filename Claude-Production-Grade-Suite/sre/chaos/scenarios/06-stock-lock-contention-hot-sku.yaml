@@ -1,0 +1,71 @@
+# Chaos Scenario 6 — Advisory-lock contention on a hot SKU (validates CR-1 under real load)
+#
+# CR-1's fix (pg_advisory_xact_lock keyed on tenant+product+store,
+# services/app/src/modules/stock/balance.ts:16) is a Critical correctness fix, but any lock
+# is also a new contention point that didn't exist before (the old, buggy code never blocked
+# anyone — it just silently corrupted data under concurrency). This scenario checks whether the
+# fix's serialization cost is acceptable under realistic contention, and whether it can cascade
+# into connection-pool pressure (readiness-review-ship.md §3) since a blocked connection holding
+# an advisory lock wait also holds its pool slot.
+
+id: stock-lock-contention-hot-sku
+risk: medium
+targets:
+  - app
+  - postgres
+
+steady_state_ref: ../steady-state-hypothesis.md
+
+hypothesis: >
+  Many concurrent operations against the SAME (tenant, product, store) triple serialize correctly
+  (no lost updates, no oversell — CR-1's actual fix goal) and queue behind the advisory lock with
+  BOUNDED wait time that stays within web-write-latency-slo's p95 1500ms threshold for realistic
+  PME concurrency levels (a handful of simultaneous operators per store, not hundreds). This also
+  checks whether unbounded lock waiting (no lock_timeout configured — readiness-review-ship.md §3/
+  §4) can turn a burst of legitimate concurrent writes into a connection-pool exhaustion event
+  (scenario 2) rather than just added latency.
+
+setup: |
+  Pick one test product+store with a known starting stock quantity. Confirm no other traffic is
+  hitting this specific product+store during the experiment (isolate the variable).
+
+action: |
+  # Fire N concurrent writes against the SAME product+store — realistic worst case for this
+  # market is "several operators in the same small store scanning items during a busy period,"
+  # not hundreds of simultaneous writers, so start at a realistic N and only escalate if steady
+  # state holds:
+  for i in $(seq 1 15); do
+    curl -s -w "%{http_code} %{time_total}\n" -o /dev/null -X POST http://localhost:3000/api/stock/exits \
+      -H "Content-Type: application/json" -H "Cookie: <valid session>" \
+      -d '{"productId":"<test>","storeId":"<test>","quantity":1,"reason":"chaos-test"}' &
+  done
+  wait
+
+expected_behavior: |
+  - All 15 requests eventually return 200 (or a correctly-mapped "insufficient stock" 4xx once
+    the quantity is exhausted — NOT silently succeeding past zero, which is exactly the TOCTOU
+    oversell CR-1 fixed) — confirm final getCurrentStock() reflects EXACTLY 15 decrements (or
+    fewer + the correct number of "insufficient stock" rejections), not fewer decrements silently
+    lost to a race.
+  - Observed `%{time_total}` values stay within a few hundred ms of each other for the queued
+    requests (lock wait, not a hang) — record the actual p95 of these 15 samples as a real data
+    point for capacity/load-model.md, replacing the theoretical estimate there.
+  - `pg_stat_activity` during the burst shows connections in `active`/waiting-on-lock state, not
+    accumulating indefinitely — confirm the count returns to baseline within a few seconds of the
+    burst completing, not staying elevated (which would indicate a leak, not just contention).
+
+abort_if: >
+  Any request hangs past 30s (evidence of no lock_timeout allowing effectively-unbounded queuing),
+  OR the final stock count doesn't match expected (evidence CR-1's fix has a gap under this
+  specific concurrency pattern) — either is a priority finding, not a pass with an asterisk.
+
+recovery_verification: |
+  Re-run the steady-state baseline block. Confirm the test product's stock count is exactly what
+  15 sequential decrements (minus any correctly-rejected oversell attempts) would produce —
+  computed by hand, not just "the number looks plausible."
+
+follow_up: >
+  Feed the observed p95/p99 lock-wait latency into capacity/load-model.md and
+  capacity/hi2-cr1-slo-impact-review.md — this scenario is the empirical validation of the
+  theoretical analysis in that document (advisory lock contention as a secondary bottleneck behind
+  connection pool exhaustion).

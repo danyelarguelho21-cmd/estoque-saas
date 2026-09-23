@@ -1,0 +1,78 @@
+# Chaos Scenario 2 — Postgres connection pool exhaustion
+#
+# Directly targets the top finding from readiness-review-ship.md §3/§6: no connection_limit is
+# configured on any of the 3 Postgres roles, and Prisma's default pool sizing
+# (num_cpus*2+1 per client, 3 clients per process, 2 processes) can plausibly approach
+# postgres:18-alpine's default max_connections (100) under concurrent load — see
+# capacity/bottleneck-analysis.md §1 for the full math this scenario validates empirically.
+
+id: postgres-connection-exhaustion
+risk: medium
+targets:
+  - postgres
+  - app
+  - worker
+
+steady_state_ref: ../steady-state-hypothesis.md
+
+hypothesis: >
+  Saturating Postgres's connection slots with idle/held connections causes app/worker requests
+  that need a new connection to queue or fail cleanly (a mapped 5xx with a clear error, or the
+  request waits within its own timeout budget) — NOT an unhandled exception, NOT a silent hang past
+  any timeout, and NOT a crash of the app/worker process itself. This scenario also validates
+  whether CR-1's new pg_advisory_xact_lock (services/app/src/modules/stock/balance.ts:16) makes
+  exhaustion WORSE under contention, since a connection blocked waiting on the advisory lock holds
+  that connection (and its pool slot) for longer than an unlocked read-then-write would have.
+
+setup: |
+  Record postgres's actual max_connections:
+    docker compose exec postgres psql -U estoque_app -d estoque_saas -c "SHOW max_connections;"
+  Record current usage (should be low/idle):
+    docker compose exec postgres psql -U estoque_app -d estoque_saas -c \
+      "SELECT count(*) FROM pg_stat_activity;"
+
+action: |
+  # Open N idle-in-transaction connections directly against postgres to simulate a leak/pool
+  # exhaustion event, where N = max_connections minus a small safety margin. Run this from a
+  # throwaway script or `psql` sessions in a loop — the point is to occupy slots, not to run real
+  # app traffic through them.
+  for i in $(seq 1 90); do
+    docker compose exec -T postgres psql -U estoque_app -d estoque_saas -c \
+      "BEGIN; SELECT pg_sleep(120);" &
+  done
+  # While slots are exhausted, exercise the app's real write path (the one CR-1 modified):
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:3000/api/stock/entries \
+    -H "Content-Type: application/json" -H "Cookie: <valid session>" \
+    -d '{"productId":"<test>","storeId":"<test>","quantity":1}'
+
+expected_behavior: |
+  - The app request either queues briefly and succeeds once a slot frees (if Prisma's own
+    pool_timeout / connection wait applies) or fails with a clean, mapped 5xx (not a raw stack
+    trace, not a hang past any configured request timeout — readiness-review-ship.md already
+    flags that NO request-level timeout is confirmed configured at the Caddy layer, which this
+    experiment also indirectly tests).
+  - `docker compose ps app worker` still show `healthy` — a Postgres saturation event should
+    degrade request handling, not crash the app/worker containers themselves.
+  - Once the 90 held transactions are killed (see recovery below), queued/waiting requests drain
+    and normal service resumes within a small number of seconds, not requiring a container restart.
+
+abort_if: >
+  app or worker container crashes/restarts (not just individual requests failing), OR the
+  experiment cannot be safely terminated within 2 minutes (i.e., the held connections don't
+  release cleanly) — kill this game day round immediately and manually terminate the held
+  connections (see recovery step) rather than waiting for the 120s pg_sleep to expire naturally.
+
+recovery: |
+  docker compose exec postgres psql -U estoque_app -d estoque_saas -c \
+    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE 'BEGIN%' OR query LIKE 'pg_sleep%';"
+
+recovery_verification: |
+  Re-run the steady-state baseline block, confirm pg_stat_activity count returns to its pre-
+  experiment baseline, and confirm the write endpoint from `action` above returns 2xx again.
+
+follow_up: >
+  If this experiment reveals requests hanging indefinitely rather than failing cleanly or queuing
+  bounded, this is the concrete evidence to prioritize readiness-review-ship.md's connection_limit
+  + statement_timeout/lock_timeout recommendation ahead of other backlog items — see
+  docs/runbooks/postgres-connection-pool-exhaustion.md (new, this SHIP pass) for the live-incident
+  response version of this same scenario.

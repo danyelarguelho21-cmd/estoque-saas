@@ -15,3 +15,27 @@
 3. **No PagBank webhook idempotency/dedupe table is confirmed to exist yet** in the codebase as reviewed for this task (ADR-004 defines the `PaymentProvider` interface and normalized event shape, but does not itself specify a dedupe mechanism). This is flagged here because the webhook runbook and SLOs assume idempotent processing as the primary defense against an unknown retry policy — if Software Engineer hasn't implemented a dedupe table/unique constraint on the provider's event ID yet, that's a gap to close before relying on this runbook's guidance in production.
 
 These are handed off as gaps, not fixed directly — per conflict-resolution protocol, SRE reviews infrastructure/implementation for reliability concerns but DevOps/Software Engineer own the fixes.
+
+---
+
+## SHIP-phase update (2026-09-22, T9b)
+
+All 3 gaps above were re-verified against the current codebase (post-HARDEN T8 commit `fb3e338`,
+post-DevOps-SHIP T7). Full re-verification with evidence: `readiness-review-ship.md` (this
+directory). Short version:
+
+1. **Worker healthcheck** — partially closed. A `healthcheck` block now exists
+   (`docker-compose.yml:106`), but it's `pgrep`-based liveness only, not a job-consumption signal —
+   the substantive gap behind alert #2 is still open. See `readiness-review-ship.md` §1 for the
+   concrete fix (heartbeat key in Redis).
+2. **PagBank retry/timeout policy** — unchanged/still an accepted assumption (depends on PagBank,
+   not this codebase). The defensive mitigation is more solidly implemented now (see #3, and HI-4).
+3. **PagBank webhook dedupe table** — **CLOSED.** `gateway_event_id text UNIQUE` confirmed at
+   `schemas/migrations/0001_init.sql:103`, and the code path using it for idempotency was made
+   race-safe this session (code-reviewer finding HI-4, atomic `updateMany` guard, verified in
+   `services/app/src/modules/billing/webhook.ts:50-72`).
+
+`readiness-review-ship.md` also surfaces 3 new High findings from a full checklist pass (no
+SIGTERM/graceful-shutdown handling, no DB connection-pool sizing/timeout config, no container
+resource limits) that did not exist as findings at T9a time because T9a's scope was SLO
+definitions only, not a full readiness checklist (see this file's original scope note above).
