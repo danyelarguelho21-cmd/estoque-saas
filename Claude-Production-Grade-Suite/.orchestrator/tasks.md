@@ -48,12 +48,14 @@ Gates: G1 (após T1) ✓ aprovado, G2 (após T2) ✓ aprovado, G3 (após T9b, an
   `lock_timeout` configurado pode encadear em exaustão de conexões sob contenção. 4 novos runbooks
   fechando lacunas que `alerting-thresholds.md` já sinalizava como faltantes.
 
-**Achados High de prontidão ainda em aberto (não corrigidos nesta passada — para decisão do
-usuário no Gate 3):** falta de SIGTERM/graceful shutdown no app/worker, sem `connection_limit`
-configurado no Prisma, sem limites de recursos (`mem_limit`/`cpus`) nos serviços Docker. Nenhum é
-um bug funcional (nada quebrado hoje) — são gaps de robustez operacional sob carga/restart, com
-runbooks de mitigação já escritos. `sre/capacity/scaling-configs.yaml` tem os valores concretos
-recomendados caso o usuário opte por fechá-los antes do Gate 3.
+**Achados High de prontidão — fechados antes do Gate 3 (commit 732d589), a pedido do usuário:**
+handler de SIGTERM/SIGINT no `worker/index.ts` (drena os 4 Workers do BullMQ antes de sair,
+`stop_grace_period` do serviço `worker` elevado a 60s); `connection_limit`/`pool_timeout` nas 3
+connection strings + nova migration `0010_role_timeouts.sql` (`statement_timeout`/`lock_timeout`/
+`idle_in_transaction_session_timeout` por role, valores confirmados via `SHOW` contra o banco
+real); `mem_limit`/`cpus` nos 5 serviços Docker. Todos os valores vieram de
+`sre/capacity/scaling-configs.yaml` (SRE é autoridade única). Reverificado: 127 testes verdes
+(75 unit + 52 integration) contra stack real recriada do zero, typecheck/lint limpos.
 
 ## BUILD Wave A — merge-back concluído
 Todos os 7 worktrees commitados e mesclados em `master` (commits d0c18dc..95f8d0c). Defeitos de
