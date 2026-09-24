@@ -1,0 +1,19 @@
+# Normaliza terminadores de linha no repositorio: tudo em LF no controle de versao,
+# independente de o checkout ter sido feito no Windows (CRLF) ou Linux/Mac (LF).
+# Isso resolve o "git status" mostrando quase todos os arquivos como modificados
+# so por causa de diferenca de line-ending (sem mudanca real de conteudo).
+
+* text=auto eol=lf
+
+# Binarios: nunca tocar em quebra de linha nem gerar diff de texto.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.zip binary
