@@ -4,7 +4,7 @@
 // sku,name,categoryId,unitOfMeasure,barcode,supplierId,isPerishable,minStockGlobal,costPriceCents,salePriceCents
 
 export interface CsvProductRow {
-  sku: string;
+  sku?: string | undefined;
   name: string;
   categoryId?: string | undefined;
   unitOfMeasure: string;
@@ -51,7 +51,7 @@ function parseCsvLine(line: string): string[] {
   return fields.map((f) => f.trim());
 }
 
-const REQUIRED_COLUMNS = ["sku", "name", "unitOfMeasure"] as const;
+const REQUIRED_COLUMNS = ["name", "unitOfMeasure"] as const;
 
 export function parseProductsCsv(csvText: string): CsvParseResult {
   const lines = csvText.split(/\r?\n/).filter((l) => l.length > 0);
@@ -77,16 +77,16 @@ export function parseProductsCsv(csvText: string): CsvParseResult {
       record[col] = values[idx] ?? "";
     });
 
-    if (!record["sku"] || !record["name"] || !record["unitOfMeasure"]) {
-      errors.push({ line: i + 1, message: "Campos obrigatórios (sku, name, unitOfMeasure) ausentes." });
+    if (!record["name"] || !record["unitOfMeasure"]) {
+      errors.push({ line: i + 1, message: "Campos obrigatórios (name, unitOfMeasure) ausentes." });
       continue;
     }
 
     const row: CsvProductRow = {
-      sku: record["sku"],
       name: record["name"],
       unitOfMeasure: record["unitOfMeasure"],
     };
+    if (record["sku"]) row.sku = record["sku"];
     if (record["categoryId"]) row.categoryId = record["categoryId"];
     if (record["barcode"]) row.barcode = record["barcode"];
     if (record["supplierId"]) row.supplierId = record["supplierId"];

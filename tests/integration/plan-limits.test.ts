@@ -43,16 +43,17 @@ describe("Plan limit enforcement, checked in real time on creation (AC-007)", ()
     expect(third.body).toMatchObject({ code: expect.any(String), message: expect.any(String), trace_id: expect.any(String) });
   });
 
-  it("blocks creating a store past maxStores (limit=1 for the Micro plan)", async () => {
+  it("counts the signup-created default store against maxStores and blocks the next store", async () => {
     const { client } = await signUpAndLogin(tinyPlanId);
 
-    // A tenant is created with zero stores at signup per the contract in auth.yaml — the first
-    // store creation should succeed, the second must be blocked.
-    const first = await client.post("/api/stores", { name: "Loja 1", type: "loja" });
-    expect(first.status).toBe(201);
+    // Signup creates "Loja principal" automatically. With maxStores=1, that default store
+    // already consumes the tenant's allowance, so the next creation must be rejected.
+    const stores = await client.get<{ items: { name: string }[] }>("/api/stores");
+    expect(stores.status).toBe(200);
+    expect(stores.body.items).toEqual([expect.objectContaining({ name: "Loja principal" })]);
 
-    const second = await client.post("/api/stores", { name: "Loja 2 (deve ser bloqueada)", type: "loja" });
-    expect(second.status).toBe(409);
+    const extra = await client.post("/api/stores", { name: "Loja extra (deve ser bloqueada)", type: "loja" });
+    expect(extra.status).toBe(409);
   });
 
   it("blocks inviting a user past maxUsers (limit=2, counting the admin created at signup)", async () => {

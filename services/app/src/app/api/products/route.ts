@@ -12,7 +12,7 @@ const ListQuerySchema = z.object({
 });
 
 const ProductInputSchema = z.object({
-  sku: z.string().min(1),
+  sku: z.string().trim().optional(),
   name: z.string().min(1),
   categoryId: z.string().uuid().optional(),
   unitOfMeasure: z.string().min(1),

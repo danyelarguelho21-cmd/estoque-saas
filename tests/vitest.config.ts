@@ -20,6 +20,10 @@ export default defineConfig({
     include: ["tests/unit/**/*.test.ts", "tests/integration/**/*.test.ts"],
     environment: "node",
     globals: false,
+    // Integration specs share one real HTTP app, Postgres, and Redis. Parallel files contend
+    // for signup/login rate limits and database locks, causing flaky 401s and timeouts.
+    maxWorkers: 1,
+    minWorkers: 1,
     testTimeout: 20_000,
     hookTimeout: 30_000,
     coverage: {

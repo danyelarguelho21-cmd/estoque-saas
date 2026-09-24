@@ -4,6 +4,26 @@ info:
   version: "1.0.0"
 security: [{ sessionCookie: [] }]
 paths:
+  /api/dashboard/monthly-sales:
+    get:
+      summary: Faturamento e quantidade de vendas nos últimos seis meses
+      operationId: getMonthlySalesSummary
+      parameters:
+        - $ref: "_common.yaml#/components/parameters/StoreIdParam"
+      responses:
+        "200":
+          description: Resumo mensal
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [month, salesCount, revenueCents]
+                  properties:
+                    month: { type: string, pattern: "^\\d{4}-\\d{2}$" }
+                    salesCount: { type: integer }
+                    revenueCents: { type: integer }
   /api/dashboard/abc-curve:
     get:
       summary: Curva ABC de produtos (por faturamento ou quantidade)

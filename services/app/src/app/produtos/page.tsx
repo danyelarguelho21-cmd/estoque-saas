@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { FolderTree, Plus, Search, Truck, Upload } from "lucide-react";
+import { FolderTree, Plus, Printer, Search, Truck, Upload } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,12 +16,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { RoleGate } from "@/components/features/role-gate";
 import { catalogApi } from "@/lib/api/catalog";
 import { formatCentsToBRL } from "@/lib/format";
+import { ProductLabelSheet } from "@/components/features/product-label-sheet";
+import type { ProductLabel } from "@/lib/api/types";
 
 export default function ProductsPage() {
   const [search, setSearch] = useState("");
   const [belowMinStock, setBelowMinStock] = useState(false);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [labels, setLabels] = useState<ProductLabel[]>([]);
+  const [labelError, setLabelError] = useState<string | null>(null);
+  const [printing, setPrinting] = useState(false);
 
   const productsQuery = useQuery({
     queryKey: ["products", search, belowMinStock, cursor],
@@ -43,8 +49,23 @@ export default function ProductsPage() {
     });
   }
 
+  async function printSelectedLabels() {
+    setPrinting(true);
+    setLabelError(null);
+    try {
+      const prepared = await catalogApi.prepareLabels(selectedIds);
+      setLabels(prepared);
+      window.setTimeout(() => window.print(), 150);
+    } catch {
+      setLabelError("Não foi possível preparar as etiquetas selecionadas.");
+    } finally {
+      setPrinting(false);
+    }
+  }
+
   return (
     <AppShell>
+      <ProductLabelSheet labels={labels} />
       <div className="flex flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -52,6 +73,12 @@ export default function ProductsPage() {
             <p className="text-sm text-[var(--color-muted)]">Catálogo, categorias e fornecedores</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <RoleGate permission="catalog:manage">
+              <Button variant="outline" disabled={!selectedIds.length || printing} loading={printing} onClick={printSelectedLabels}>
+                <Printer className="h-4 w-4" />
+                Imprimir etiquetas ({selectedIds.length})
+              </Button>
+            </RoleGate>
             <Button asChild variant="outline">
               <Link href="/produtos/categorias">
                 <FolderTree className="h-4 w-4" />
@@ -82,6 +109,7 @@ export default function ProductsPage() {
         </div>
 
         <Card>
+          {labelError && <p role="alert" className="p-3 text-sm text-rose-700">{labelError}</p>}
           <div className="flex flex-wrap items-center gap-3 border-b border-[var(--color-border)] p-4">
             <div className="relative flex-1 min-w-[220px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
@@ -123,6 +151,7 @@ export default function ProductsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead aria-label="Selecionar" />
                     <TableHead>SKU</TableHead>
                     <TableHead>Nome</TableHead>
                     <TableHead>Unidade</TableHead>
@@ -134,7 +163,15 @@ export default function ProductsPage() {
                 <TableBody>
                   {productsQuery.data.items.map((product) => (
                     <TableRow key={product.id}>
-                      <TableCell className="font-mono text-xs">{product.sku}</TableCell>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          aria-label={`Selecionar etiqueta de ${product.name}`}
+                          checked={selectedIds.includes(product.id)}
+                          onChange={(event) => setSelectedIds((ids) => event.target.checked ? [...ids, product.id] : ids.filter((id) => id !== product.id))}
+                        />
+                      </TableCell>
+                    <TableCell className="font-mono text-xs">{product.sku ?? "—"}</TableCell>
                       <TableCell>
                         <Link href={`/produtos/${product.id}`} className="font-medium text-[var(--color-primary)] hover:underline">
                           {product.name}

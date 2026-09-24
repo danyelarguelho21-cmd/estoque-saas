@@ -5,11 +5,12 @@ import {
   withTenant,
   type TenantScopedClient,
 } from "@estoque-saas/shared";
+import { randomInt } from "node:crypto";
 import { getTenantWithPlan } from "@/modules/auth";
 import { getCurrentStock, getCurrentStockForProducts } from "@/modules/stock";
 
 export interface ProductInput {
-  sku: string;
+  sku?: string | undefined;
   name: string;
   categoryId?: string | undefined;
   unitOfMeasure: string;
@@ -91,7 +92,7 @@ export async function createProduct(tenantId: string, userId: string, input: Pro
     const product = await tx.product.create({
       data: {
         tenantId,
-        sku: input.sku,
+        sku: input.sku?.trim() || null,
         name: input.name,
         categoryId: input.categoryId ?? null,
         unitOfMeasure: input.unitOfMeasure,
@@ -107,6 +108,37 @@ export async function createProduct(tenantId: string, userId: string, input: Pro
     await recordAudit(tx, { tenantId, userId, entityType: "product", entityId: product.id, action: "create", after: { sku: product.sku, name: product.name } });
 
     return withCurrentStock(tx, product);
+  });
+}
+
+function makeEan13() {
+  const body = String(randomInt(100_000_000_000, 1_000_000_000_000));
+  const sum = [...body].reduce((total, digit, index) => total + Number(digit) * (index % 2 === 0 ? 1 : 3), 0);
+  return `${body}${(10 - (sum % 10)) % 10}`;
+}
+
+export async function prepareProductLabels(tenantId: string, productIds: string[]) {
+  return withTenant(tenantId, async (tx) => {
+    const products = await tx.product.findMany({ where: { id: { in: productIds }, deletedAt: null } });
+    if (products.length !== productIds.length) throw new NotFoundError("Um ou mais produtos não foram encontrados.");
+    const labels = [];
+    for (const product of products) {
+      let barcode = product.barcode;
+      if (!barcode) {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const candidate = makeEan13();
+          const exists = await tx.product.findFirst({ where: { barcode: candidate } });
+          if (!exists) {
+            barcode = candidate;
+            break;
+          }
+        }
+        if (!barcode) throw new Error("Não foi possível reservar um código de barras único.");
+        await tx.product.update({ where: { id: product.id }, data: { barcode } });
+      }
+      labels.push({ id: product.id, name: product.name, sku: product.sku, barcode });
+    }
+    return labels;
   });
 }
 

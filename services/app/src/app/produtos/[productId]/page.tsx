@@ -67,7 +67,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ produc
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold text-slate-900">{product.name}</h1>
-            <p className="text-sm text-[var(--color-muted)]">SKU {product.sku}</p>
+            {product.sku && <p className="text-sm text-[var(--color-muted)]">SKU {product.sku}</p>}
           </div>
           <RoleGate permission="catalog:manage">
             <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
@@ -110,7 +110,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ produc
                 <ProductForm
                   submitLabel="Salvar alterações"
                   initial={{
-                    sku: product.sku,
+                    sku: product.sku ?? "",
                     name: product.name,
                     ...(product.categoryId ? { categoryId: product.categoryId } : {}),
                     unitOfMeasure: product.unitOfMeasure,

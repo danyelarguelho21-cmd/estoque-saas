@@ -1,8 +1,7 @@
 name: test
 
-# QA-owned test pipeline (tests/ is the oracle of record — loop-protocol Rule 4). If DevOps'
-# own CI skeleton (T4a) also defines build/deploy workflows, reconcile job names at merge time
-# rather than duplicating; this file only owns the test stages below.
+# Release gate: quality checks plus unit, real HTTP integration, and browser E2E tests. The CD
+# workflow waits for this workflow to pass before deploying a commit from main.
 
 on:
   pull_request:
@@ -10,8 +9,8 @@ on:
     branches: [main]
 
 jobs:
-  unit:
-    name: Unit tests
+  quality:
+    name: Typecheck, lint and production build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +19,25 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: cp .env.example .env
+      - run: npm run prisma:generate
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build --workspace services/app
+      - run: docker build -f services/app/Dockerfile -t estoque-saas-app:release-check .
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: cp .env.example .env
       - run: npx vitest run --config tests/vitest.config.ts tests/unit
       - uses: actions/upload-artifact@v4
         if: always()
@@ -49,8 +67,23 @@ jobs:
           --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       TEST_DATABASE_URL: postgresql://estoque_app:devpassword@localhost:5433/estoque_saas_test
+      TEST_APP_DATABASE_URL: postgresql://app_user:devpassword-app-user@localhost:5433/estoque_saas_test
+      TEST_PLATFORM_ADMIN_DATABASE_URL: postgresql://platform_admin_role:devpassword-platform-admin@localhost:5433/estoque_saas_test
       TEST_REDIS_URL: redis://localhost:6380
+      TEST_BASE_URL: http://localhost:3100
+      REDIS_URL: redis://localhost:6380
       DATABASE_URL: postgresql://estoque_app:devpassword@localhost:5433/estoque_saas_test
+      APP_DATABASE_URL: postgresql://app_user:devpassword-app-user@localhost:5433/estoque_saas_test
+      PLATFORM_ADMIN_DATABASE_URL: postgresql://platform_admin_role:devpassword-platform-admin@localhost:5433/estoque_saas_test
+      APP_DB_PASSWORD: devpassword-app-user
+      PLATFORM_ADMIN_DB_PASSWORD: devpassword-platform-admin
+      AUTH_SECRET: integration-test-secret-not-for-production
+      AUTH_URL: http://localhost:3100
+      PAGBANK_API_KEY: test-dummy-key
+      PAGBANK_BASE_URL: http://127.0.0.1:1
+      PAGBANK_WEBHOOK_SECRET: integration-webhook-secret-not-for-production
+      RATE_LIMIT_SIGNUP_IP_MAX: "100"
+      RATE_LIMIT_LOGIN_IP_MAX: "100"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -58,8 +91,28 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: cp .env.example .env
       - run: npm run prisma:generate
-      - run: npx vitest run --config tests/vitest.config.ts tests/integration
+      - name: Start app and BullMQ worker for HTTP integration tests
+        run: |
+          npm run dev --workspace services/app -- -p 3100 > /tmp/estoque-app.log 2>&1 &
+          echo $! > /tmp/estoque-app.pid
+          npm run worker --workspace services/app > /tmp/estoque-worker.log 2>&1 &
+          echo $! > /tmp/estoque-worker.pid
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:3100/api/healthz >/dev/null \
+              && grep -q 'escutando fila: parse-nfe' /tmp/estoque-worker.log; then
+              echo "App e worker prontos."
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/estoque-app.log
+          cat /tmp/estoque-worker.log
+          echo "App/worker não ficaram prontos." >&2
+          exit 1
+      - name: Run real HTTP integration tests
+        run: npx vitest run --config tests/vitest.config.ts tests/integration
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -97,6 +150,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: cp .env.example .env
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test --config tests/e2e/playwright.config.ts
       - uses: actions/upload-artifact@v4

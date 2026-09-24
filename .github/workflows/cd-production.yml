@@ -2,7 +2,8 @@
 # docs/architecture/system-diagrams/c4-container.md). Nenhuma dependência de nuvem específica
 # (AWS/GCP/Azure), Kubernetes ou Terraform envolvida aqui — decisão de arquitetura já tomada.
 #
-# Dispara depois que o workflow CI (.github/workflows/ci.yml) termina com sucesso na branch main,
+# Dispara depois que o workflow completo de qualidade e testes (.github/workflows/test.yml) termina
+# com sucesso na branch main,
 # ou manualmente via workflow_dispatch. Dois jobs sequenciais + smoke test:
 #   1. build-and-push — builda a imagem e publica no GHCR SOMENTE como trilha de auditoria/
 #      rollback manual (`docker pull ghcr.io/<repo>-app:<sha>` para inspecionar ou rodar uma
@@ -26,7 +27,7 @@ name: CD Production
 
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["test"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -47,7 +48,7 @@ jobs:
   build-and-push:
     name: Build & Push (auditoria/rollback)
     runs-on: ubuntu-latest
-    # workflow_dispatch sempre roda; workflow_run só segue se o CI concluiu com sucesso.
+    # workflow_dispatch sempre roda; workflow_run só segue se a suíte test.yml concluiu com sucesso.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: read
@@ -92,7 +93,7 @@ jobs:
     needs: build-and-push
     environment: production # opcional: configure em Settings > Environments para exigir approval manual
     steps:
-      - name: Deploy via SSH (git pull + docker compose up -d --build)
+      - name: Deploy via SSH (checkout validado + docker compose up -d --build)
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -101,7 +102,18 @@ jobs:
           script_stop: true
           envs: DEPLOY_REF
           script: |
+            set -eu
             cd "${{ secrets.VPS_DEPLOY_DIR }}"
+            git fetch --prune origin
+            if git show-ref --verify --quiet "refs/remotes/origin/$DEPLOY_REF"; then
+              CHECKOUT_REF="origin/$DEPLOY_REF"
+            else
+              CHECKOUT_REF="$DEPLOY_REF"
+            fi
+            PREFLIGHT_SCRIPT=$(mktemp)
+            trap 'rm -f "$PREFLIGHT_SCRIPT"' EXIT
+            git show "$CHECKOUT_REF:scripts/validate-production-env.mjs" > "$PREFLIGHT_SCRIPT"
+            node --env-file=.env "$PREFLIGHT_SCRIPT"
             ./scripts/deploy.sh
         env:
           DEPLOY_REF: ${{ needs.build-and-push.outputs.ref }}

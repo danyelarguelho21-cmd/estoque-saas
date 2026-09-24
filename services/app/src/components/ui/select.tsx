@@ -31,10 +31,8 @@ export function Select({
   invalid = false,
   ...aria
 }: SelectProps) {
-  const rootValueProp = value === undefined ? {} : { value };
-
   return (
-    <RadixSelect.Root {...rootValueProp} onValueChange={onValueChange} disabled={disabled ?? false}>
+    <RadixSelect.Root value={value ?? ""} onValueChange={onValueChange} disabled={disabled ?? false}>
       <RadixSelect.Trigger
         id={id}
         aria-invalid={invalid || undefined}

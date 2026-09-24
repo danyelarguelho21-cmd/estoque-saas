@@ -42,7 +42,7 @@ export default function NewSalePage() {
   const [storeId, setStoreId] = useState("");
   const [customerId, setCustomerId] = useState<string | undefined>(undefined);
   const [paymentMethodLabel, setPaymentMethodLabel] = useState("");
-  const [rows, setRows] = useState<SaleRow[]>([newRow()]);
+  const [rows, setRows] = useState<SaleRow[]>([{ key: "sale-item-initial", product: null, quantity: "1", unitPrice: "", batchId: undefined }]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -130,7 +130,7 @@ export default function NewSalePage() {
                     placeholder="Selecione"
                   />
                 </Field>
-                <Field label="Cliente" htmlFor="customerId" hint="Opcional">
+                <Field label="Cliente" htmlFor="customerId" hint="Opcional — venda para consumidor final sem cadastro">
                   <Select
                     id="customerId"
                     value={customerId}

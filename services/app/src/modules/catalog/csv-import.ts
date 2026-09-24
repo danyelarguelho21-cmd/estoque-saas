@@ -12,7 +12,11 @@ export async function processProductsCsvJob(tenantId: string, csvText: string): 
 
   await withTenant(tenantId, async (tx) => {
     for (const row of rows) {
-      const exists = await tx.product.findFirst({ where: { sku: row.sku, deletedAt: null } });
+      const exists = row.sku
+        ? await tx.product.findFirst({ where: { sku: row.sku, deletedAt: null } })
+        : row.barcode
+          ? await tx.product.findFirst({ where: { barcode: row.barcode, deletedAt: null } })
+          : null;
       if (exists) {
         skipped++;
         continue;
@@ -20,7 +24,7 @@ export async function processProductsCsvJob(tenantId: string, csvText: string): 
       await tx.product.create({
         data: {
           tenantId,
-          sku: row.sku,
+          sku: row.sku?.trim() || null,
           name: row.name,
           unitOfMeasure: row.unitOfMeasure,
           categoryId: row.categoryId ?? null,

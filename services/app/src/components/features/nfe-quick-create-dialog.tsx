@@ -36,7 +36,6 @@ export function NfeQuickCreateDialog({ importId, item, onCreated }: NfeQuickCrea
       let product;
       try {
         product = await catalogApi.createProduct({
-          sku,
           name,
           unitOfMeasure,
           ...(barcode ? { barcode } : {}),
@@ -44,7 +43,7 @@ export function NfeQuickCreateDialog({ importId, item, onCreated }: NfeQuickCrea
       } catch {
         // Se o SKU já existir, reutiliza somente um produto com o mesmo SKU e EAN do XML.
         // Assim o operador não precisa duplicar o cadastro para destravar a conferência.
-        const existingProducts = await catalogApi.listProducts({ search: sku, limit: 100 });
+        const existingProducts = await catalogApi.listProducts({ search: sku || item.xProd, limit: 100 });
         product = existingProducts.items.find((candidate) => candidate.sku === sku && candidate.barcode === (barcode || undefined));
         if (!product) throw new Error("Não existe produto com este SKU e código de barras para vincular.");
       }
@@ -72,8 +71,8 @@ export function NfeQuickCreateDialog({ importId, item, onCreated }: NfeQuickCrea
               {error}
             </p>
           )}
-          <Field label="SKU" htmlFor={`sku-${item.id}`} required>
-            <Input id={`sku-${item.id}`} required value={sku} onChange={(e) => setSku(e.target.value)} />
+          <Field label="SKU" htmlFor={`sku-${item.id}`} hint="Opcional">
+            <Input id={`sku-${item.id}`} value={sku} onChange={(e) => setSku(e.target.value)} />
           </Field>
           <Field label="Nome do produto" htmlFor={`name-${item.id}`} required>
             <Input id={`name-${item.id}`} required value={name} onChange={(e) => setName(e.target.value)} />

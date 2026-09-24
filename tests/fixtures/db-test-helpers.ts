@@ -42,6 +42,11 @@ const MIGRATION_FILES = [
   "0007_platform_list_active_tenants_function.sql",
   "0010_role_timeouts.sql",
 ].map((f) => path.join(REPO_ROOT, "schemas/migrations", f));
+// The SQL reference migrations above predate the product-SKU change. Apply the corresponding
+// Prisma migration too so the isolated HTTP test schema matches the current production schema.
+MIGRATION_FILES.push(
+  path.join(REPO_ROOT, "libs/shared/prisma/migrations/20260923180000_product_sku_optional/migration.sql"),
+);
 
 // GUARD (root-cause fix, found via manual e2e testing): this module's seed helpers
 // (seedPlan/seedTenant/etc.) INSERT unconditionally with no existence check and no per-call

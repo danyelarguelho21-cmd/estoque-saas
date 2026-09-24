@@ -4,6 +4,26 @@ info:
   version: "1.0.0"
 security: [{ sessionCookie: [] }]
 paths:
+  /api/products/labels:
+    post:
+      summary: Reserva códigos de barras e retorna dados para imprimir etiquetas de produtos
+      operationId: prepareProductLabels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productIds]
+              properties:
+                productIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Produtos prontos para impressão
   /api/products:
     get:
       summary: Lista produtos do tenant
@@ -173,9 +193,9 @@ components:
   schemas:
     ProductInput:
       type: object
-      required: [sku, name, unitOfMeasure]
+      required: [name, unitOfMeasure]
       properties:
-        sku: { type: string }
+        sku: { type: string, nullable: true }
         name: { type: string }
         categoryId: { type: string, format: uuid }
         unitOfMeasure: { type: string }

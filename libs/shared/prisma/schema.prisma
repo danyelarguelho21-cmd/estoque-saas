@@ -161,7 +161,7 @@ model Product {
   id               String    @id @default(uuid()) @db.Uuid
   tenantId         String    @map("tenant_id") @db.Uuid
   tenant           Tenant    @relation(fields: [tenantId], references: [id])
-  sku              String
+  sku              String?
   name             String
   categoryId       String?   @map("category_id") @db.Uuid
   category         Category? @relation(fields: [categoryId], references: [id])

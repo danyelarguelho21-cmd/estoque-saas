@@ -50,12 +50,12 @@ export function ProductForm({ initial, submitLabel, onSubmit }: ProductFormProps
     setSubmitting(true);
     try {
       const input: ProductInput = {
-        sku,
         name,
         unitOfMeasure,
         isPerishable,
         minStockGlobal: Number(minStockGlobal) || 0,
       };
+      if (sku.trim()) input.sku = sku.trim();
       if (categoryId) input.categoryId = categoryId;
       if (barcode) input.barcode = barcode;
       if (supplierId) input.supplierId = supplierId;
@@ -79,8 +79,8 @@ export function ProductForm({ initial, submitLabel, onSubmit }: ProductFormProps
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="SKU" htmlFor="sku" required>
-          <Input id="sku" required value={sku} onChange={(e) => setSku(e.target.value)} />
+        <Field label="SKU" htmlFor="sku" hint="Opcional">
+          <Input id="sku" value={sku} onChange={(e) => setSku(e.target.value)} />
         </Field>
         <Field label="Nome do produto" htmlFor="name" required>
           <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} />

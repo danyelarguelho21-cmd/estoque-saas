@@ -31,7 +31,7 @@ export default function ImportProductsPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Importar produtos via CSV</h1>
           <p className="text-sm text-[var(--color-muted)]">
-            Atualiza ou cadastra produtos em lote. Colunas esperadas: sku, name, categoryId, unitOfMeasure, barcode,
+            Atualiza ou cadastra produtos em lote. SKU é opcional. Colunas esperadas: sku, name, categoryId, unitOfMeasure, barcode,
             supplierId, isPerishable, minStockGlobal, costPriceCents, salePriceCents.
           </p>
         </div>

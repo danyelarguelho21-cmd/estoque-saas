@@ -7,6 +7,43 @@ export interface DashboardDateFilter {
   to?: string | undefined;
 }
 
+export async function getMonthlySalesSummary(tenantId: string, storeId?: string) {
+  const currentMonth = new Date();
+  currentMonth.setDate(1);
+  currentMonth.setHours(0, 0, 0, 0);
+  const firstMonth = new Date(currentMonth);
+  firstMonth.setMonth(firstMonth.getMonth() - 5);
+  const end = new Date(currentMonth);
+  end.setMonth(end.getMonth() + 1);
+
+  return withTenant(tenantId, async (tx) => {
+    const sales = await tx.sale.findMany({
+      where: {
+        status: "completed",
+        createdAt: { gte: firstMonth, lt: end },
+        ...(storeId ? { storeId } : {}),
+      },
+      select: { createdAt: true, totalAmountCents: true },
+    });
+    const byMonth = new Map<string, { month: string; salesCount: number; revenueCents: number }>();
+    for (let offset = 0; offset < 6; offset++) {
+      const date = new Date(firstMonth);
+      date.setMonth(firstMonth.getMonth() + offset);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      byMonth.set(key, { month: key, salesCount: 0, revenueCents: 0 });
+    }
+    for (const sale of sales) {
+      const key = `${sale.createdAt.getFullYear()}-${String(sale.createdAt.getMonth() + 1).padStart(2, "0")}`;
+      const summary = byMonth.get(key);
+      if (summary) {
+        summary.salesCount++;
+        summary.revenueCents += sale.totalAmountCents;
+      }
+    }
+    return [...byMonth.values()];
+  });
+}
+
 // api/openapi/dashboard.yaml#getAbcCurve — classifica produtos por contribuição acumulada de
 // receita ou quantidade (classe A = até 80% acumulado, B = até 95%, C = restante).
 export async function getAbcCurve(tenantId: string, opts: DashboardDateFilter & { metric?: "revenue" | "quantity" | undefined }) {

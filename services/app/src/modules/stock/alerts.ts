@@ -4,7 +4,7 @@ import { getCurrentStockForProducts } from "./balance";
 
 export interface LowStockProduct {
   id: string;
-  sku: string;
+  sku: string | null;
   name: string;
   currentStock: number;
   minStock: number;

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Boxes } from "lucide-react";
+import { Boxes, MessageCircle } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { TENANT_NAV_ITEMS } from "@/components/layout/nav-items";
 import { cn } from "@/lib/utils";
@@ -35,6 +35,15 @@ export function Sidebar({ className }: { className?: string }) {
           </Link>
         );
       })}
+      <a
+        href="https://wa.me/5567998768049?text=Ol%C3%A1%2C%20preciso%20de%20suporte%20no%20Estoque%20SaaS"
+        target="_blank"
+        rel="noreferrer"
+        className="mt-auto flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-50"
+      >
+        <MessageCircle className="h-4 w-4" aria-hidden />
+        Suporte pelo WhatsApp
+      </a>
     </nav>
   );
 }

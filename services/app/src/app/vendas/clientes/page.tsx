@@ -124,7 +124,7 @@ function NewCustomerDialog() {
           <Field label="Nome" htmlFor="customerName" required>
             <Input id="customerName" required value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
-          <Field label="Documento (CPF/CNPJ)" htmlFor="customerDocument">
+          <Field label="CPF/CNPJ" htmlFor="customerDocument" hint="Opcional; pessoa física pode ser cadastrada sem documento">
             <Input id="customerDocument" value={document} onChange={(e) => setDocument(e.target.value)} />
           </Field>
           <Field label="Telefone" htmlFor="customerPhone">

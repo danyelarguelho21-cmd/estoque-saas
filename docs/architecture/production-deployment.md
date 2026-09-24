@@ -79,20 +79,25 @@ DevOps garante:
   downtime (ordem: `ALTER ROLE` no Postgres → atualizar `.env` → `docker compose up -d --build`);
   para PagBank, a rotação é manual no painel do provedor (não pode ser gerada localmente) — o
   script documenta os passos.
+- Antes de qualquer deploy, `scripts/validate-production-env.mjs` valida domínio, URLs públicas,
+  credenciais do gateway e roles/senhas do banco, rejeitando valores de desenvolvimento. O deploy
+  aborta antes de trocar o checkout ou executar migrations se algo estiver faltando.
 - Cadência recomendada: 90 dias, ou imediatamente após suspeita de vazamento.
 
 ## 4. CD (`​.github/workflows/cd-production.yml`)
 
-Dispara depois que `ci.yml` conclui com sucesso na branch `main` (via `workflow_run`), ou
+Dispara depois que `test.yml` conclui com sucesso na branch `main` (via `workflow_run`), ou
 manualmente (`workflow_dispatch`, informando `ref`). Três jobs:
 
 1. **build-and-push** — builda a imagem e publica no GHCR (`ghcr.io/<repo>-app:<sha>` e `:latest`)
    **somente** como trilha de auditoria/rollback manual (permite `docker pull` de uma imagem
    antiga específica para inspecionar fora do VPS). **Não** é essa imagem publicada que roda em
    produção.
-2. **deploy** — SSH no VPS (`appleboy/ssh-action@v1`) e roda `scripts/deploy.sh`, que faz
-   `git pull` + `npm ci` + `prisma migrate deploy` (não-interativo — diferente de `make migrate`
-   local, que usa `prisma migrate dev`) + grants/seed idempotentes + `docker compose up -d --build`
+2. **deploy** — SSH no VPS (`appleboy/ssh-action@v1`), valida o `.env` com o preflight do commit
+   alvo, depois roda `scripts/deploy.sh`, que faz fetch + detached checkout do commit testado,
+   `npm ci` + `prisma migrate deploy` (não-interativo — diferente de `make migrate`
+   local, que usa `prisma migrate dev`) + grants/seed idempotentes + bootstrap seguro do admin da
+   plataforma + `docker compose up -d --build`
    (build local no VPS a partir do commit já sincronizado — rolling restart simples, sem
    blue-green/canário, que seriam over-engineering nesta escala per `deployment-notes.md`).
    O job usa o Environment `production` do GitHub — configure em Settings > Environments se quiser
@@ -111,6 +116,10 @@ manualmente (`workflow_dispatch`, informando `ref`). Três jobs:
 | `VPS_DEPLOY_DIR` | caminho absoluto do repositório clonado no VPS (ex.: `/opt/estoque-saas`) |
 | `PRODUCTION_BASE_URL` | URL pública (ex.: `https://app.seudominio.com.br`) usada no smoke test |
 
+O workflow `test.yml` executa typecheck, lint, build, unit, integração HTTP real (Postgres, Redis,
+app e worker) e E2E; o CD espera essa suíte completa passar. O workflow `ci.yml` também valida
+typecheck, lint e build.
+
 **Pré-requisitos no VPS** (setup manual, uma vez — fora do escopo de um workflow de CI, é
 provisionamento inicial do host): Docker + plugin Docker Compose, Node.js 24+, `git clone` do
 repositório em `VPS_DEPLOY_DIR`, `.env` já populado (`chmod 600`). Node é necessário no host (não
@@ -118,8 +127,8 @@ só dentro dos containers) porque `prisma migrate deploy` e os scripts de grants
 — `services/app/Dockerfile` não copia `scripts/` para a imagem de runtime (ver
 `deployment-notes.md`).
 
-**Rollback manual:** `ssh` no VPS, `git checkout <sha-anterior>` dentro de `VPS_DEPLOY_DIR`, depois
-`./scripts/deploy.sh` novamente (builda a versão anterior localmente). Não há rollback automatizado
+**Rollback manual:** `ssh` no VPS e rode `DEPLOY_REF=<sha-anterior> ./scripts/deploy.sh` dentro de
+`VPS_DEPLOY_DIR` (builda a versão anterior localmente e reaplica migrations pendentes). Não há rollback automatizado
 — para a escala atual (solo/dupla), um comando manual documentado é suficiente; automatizar isso
 sem métricas de erro para decidir "quando" reverter seria construir metade de um sistema de
 canary/rollback sem a outra metade (fora de escopo, SRE define isso se/quando fizer sentido).

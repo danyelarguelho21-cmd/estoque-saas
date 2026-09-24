@@ -62,9 +62,10 @@ extraível em serviços independentes no futuro, se a escala justificar.
 
 ## Status
 
-Produção-pronto: passou pelas fases DEFINE, BUILD, HARDEN e SHIP do pipeline production-grade
-(Gate 3 aprovado) — regras de negócio, UI, testes (unit/integration/e2e/performance), auditoria de
-segurança, revisão de código, deploy em VPS via Docker Compose (Caddy + TLS automático, CD via
-GitHub Actions) e prontidão SRE (SLOs, chaos engineering, runbooks) implementados. Ver
-[`Claude-Production-Grade-Suite/.orchestrator/tasks.md`](./Claude-Production-Grade-Suite/.orchestrator/tasks.md)
-para o histórico completo do pipeline.
+Infraestrutura e pipeline de produção estão no repositório (Docker Compose, Caddy/TLS, migrations e
+GitHub Actions), mas o sistema ainda não foi publicado em um VPS. A publicação depende de um
+remote/branch, domínio e DNS, credenciais reais de produção e secrets do GitHub. O deploy valida a
+configuração do VPS antes de executar migrations. Ver
+[`docs/architecture/production-deployment.md`](./docs/architecture/production-deployment.md) para
+o checklist e [`Claude-Production-Grade-Suite/.orchestrator/tasks.md`](./Claude-Production-Grade-Suite/.orchestrator/tasks.md)
+para o histórico do pipeline.

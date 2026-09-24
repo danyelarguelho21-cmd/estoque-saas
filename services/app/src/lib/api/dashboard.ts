@@ -1,7 +1,9 @@
 import { api, buildQuery } from "./client";
-import type { AbcCurveItem, BestSeller, StalledProduct, TurnoverItem } from "./types";
+import type { AbcCurveItem, BestSeller, MonthlySalesSummary, StalledProduct, TurnoverItem } from "./types";
 
 export const dashboardApi = {
+  getMonthlySales: (storeId?: string) =>
+    api.get<MonthlySalesSummary[]>(`/api/dashboard/monthly-sales${buildQuery({ storeId })}`),
   getAbcCurve: (
     params: {
       storeId?: string | undefined;

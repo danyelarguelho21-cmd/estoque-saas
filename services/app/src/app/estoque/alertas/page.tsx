@@ -66,7 +66,7 @@ export default function StockAlertsPage() {
                         {product.name}
                       </Link>
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{product.sku}</TableCell>
+                    <TableCell className="font-mono text-xs">{product.sku ?? "—"}</TableCell>
                     <TableCell>
                       <Badge variant="danger">{product.currentStock ?? 0}</Badge>
                     </TableCell>

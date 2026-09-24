@@ -70,3 +70,35 @@
     scrollbar-width: thin;
   }
 }
+
+#print-labels { display: none; }
+@media print {
+  @page { size: 50mm 30mm; margin: 0; }
+  body * { visibility: hidden !important; }
+  #print-labels, #print-labels * { visibility: visible !important; }
+  #print-labels {
+    display: block !important;
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 50mm;
+  }
+  .product-label {
+    box-sizing: border-box;
+    width: 50mm;
+    height: 30mm;
+    padding: 2mm 3mm 1mm;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    page-break-after: always;
+    color: #000;
+    font: 8pt Arial, sans-serif;
+    text-align: center;
+  }
+  .product-label strong { max-width: 100%; font-size: 8pt; line-height: 1.1; }
+  .product-label span { font-size: 6pt; }
+  .label-barcode { width: 42mm; height: 17mm; }
+  .label-barcode-text { font: 8pt monospace; overflow-wrap: anywhere; }
+}

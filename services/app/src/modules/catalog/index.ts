@@ -7,6 +7,7 @@ export {
   updateProduct,
   deleteProduct,
   setProductStoreMinStock,
+  prepareProductLabels,
   type ProductInput,
   type ProductUpdateInput,
   type ListProductsFilters,

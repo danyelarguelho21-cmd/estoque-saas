@@ -1,5 +1,5 @@
 import { api, buildQuery } from "./client";
-import type { Category, Paginated, Product, ProductInput, Supplier, SupplierInput } from "./types";
+import type { Category, Paginated, Product, ProductInput, ProductLabel, Supplier, SupplierInput } from "./types";
 
 export const catalogApi = {
   listProducts: (
@@ -12,6 +12,7 @@ export const catalogApi = {
   ) =>
     api.get<Paginated<Product>>(`/api/products${buildQuery(params)}`),
   createProduct: (input: ProductInput) => api.post<Product>("/api/products", input),
+  prepareLabels: (productIds: string[]) => api.post<ProductLabel[]>("/api/products/labels", { productIds }),
   getProduct: (productId: string) => api.get<Product>(`/api/products/${productId}`),
   updateProduct: (productId: string, input: ProductInput) =>
     api.patch<Product>(`/api/products/${productId}`, input),

@@ -16,6 +16,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StoreFilter } from "@/components/features/store-filter";
 import { RoleGate } from "@/components/features/role-gate";
 import { salesApi } from "@/lib/api/sales";
+import { dashboardApi } from "@/lib/api/dashboard";
+import { MonthlySalesChart } from "@/components/features/monthly-sales-chart";
 import { formatCentsToBRL, formatDateTimeBR } from "@/lib/format";
 
 export default function SalesPage() {
@@ -28,6 +30,10 @@ export default function SalesPage() {
   const salesQuery = useQuery({
     queryKey: ["sales", storeId, from, to, cursor],
     queryFn: () => salesApi.listSales({ storeId, from: from || undefined, to: to || undefined, cursor, limit: 20 }),
+  });
+  const monthlySalesQuery = useQuery({
+    queryKey: ["monthly-sales", storeId],
+    queryFn: () => dashboardApi.getMonthlySales(storeId),
   });
 
   function goNext() {
@@ -69,6 +75,12 @@ export default function SalesPage() {
             </RoleGate>
           </div>
         </div>
+
+        <Card className="p-4">
+          <h2 className="mb-3 text-base font-semibold text-slate-900">Comparativo de vendas</h2>
+          {monthlySalesQuery.data && <MonthlySalesChart data={monthlySalesQuery.data} />}
+          {monthlySalesQuery.isLoading && <PageSpinner />}
+        </Card>
 
         <Card>
           <div className="flex flex-wrap items-end gap-3 border-b border-[var(--color-border)] p-4">

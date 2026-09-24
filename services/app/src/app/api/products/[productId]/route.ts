@@ -4,7 +4,7 @@ import { deleteProduct, getProduct, updateProduct } from "@/modules/catalog";
 import { handleRoute, noContent, ok, parseJsonBody } from "@/lib/http";
 
 const ProductUpdateSchema = z.object({
-  sku: z.string().min(1).optional(),
+  sku: z.string().trim().optional(),
   name: z.string().min(1).optional(),
   categoryId: z.string().uuid().optional(),
   unitOfMeasure: z.string().min(1).optional(),

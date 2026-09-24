@@ -56,7 +56,7 @@ export interface UserSummary {
 /* ---------- catalog.yaml ---------- */
 
 export interface ProductInput {
-  sku: string;
+  sku?: string;
   name: string;
   categoryId?: string;
   unitOfMeasure: string;
@@ -68,8 +68,9 @@ export interface ProductInput {
   salePriceCents?: number;
 }
 
-export interface Product extends ProductInput {
+export interface Product extends Omit<ProductInput, "sku"> {
   id: string;
+  sku: string | null;
   currentStock?: number;
 }
 
@@ -270,6 +271,19 @@ export interface BestSeller {
   productId: string;
   productName: string;
   quantitySold: number;
+  revenueCents: number;
+}
+
+export interface ProductLabel {
+  id: string;
+  name: string;
+  sku: string | null;
+  barcode: string;
+}
+
+export interface MonthlySalesSummary {
+  month: string;
+  salesCount: number;
   revenueCents: number;
 }
 

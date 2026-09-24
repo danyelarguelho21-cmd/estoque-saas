@@ -54,6 +54,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Create local env file for dotenv-cli scripts
+        run: cp .env.example .env
+
       # Necessário antes de typecheck/build: o Prisma Client é gerado a partir de
       # libs/shared/prisma/schema.prisma e importado por libs/shared e services/app.
       # O Dockerfile faz o mesmo (RUN npm run prisma:generate antes do build) — mantido

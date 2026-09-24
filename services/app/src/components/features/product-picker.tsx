@@ -51,7 +51,7 @@ export function ProductPicker({ id, selected, onSelect, onClear }: ProductPicker
       <div className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm">
         <div>
           <p className="font-medium text-slate-900">{selected.name}</p>
-          <p className="text-xs text-[var(--color-muted)]">SKU {selected.sku}</p>
+          {selected.sku && <p className="text-xs text-[var(--color-muted)]">SKU {selected.sku}</p>}
         </div>
         <button
           type="button"
@@ -107,7 +107,7 @@ export function ProductPicker({ id, selected, onSelect, onClear }: ProductPicker
               >
                 <span className="font-medium text-slate-900">{product.name}</span>
                 <span className="text-xs text-[var(--color-muted)]">
-                  SKU {product.sku} · Estoque atual: {product.currentStock ?? 0}
+                  {product.sku ? `SKU ${product.sku} · ` : ""}Estoque atual: {product.currentStock ?? 0}
                 </span>
               </button>
             </li>
