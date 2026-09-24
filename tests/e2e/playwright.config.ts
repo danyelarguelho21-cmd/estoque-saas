@@ -69,7 +69,14 @@ export default defineConfig({
   fullyParallel: false, // suites share one app instance + DB; parallel workers would race on tenant/plan seed data
   workers: 1, // keep files sharing the isolated DB/Redis sequential even when Playwright's default is multi-worker
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? [["default"], ["junit", { outputFile: "tests/coverage/junit-playwright.xml" }]] : "list",
+  // NOTE: "default" is NOT a builtin reporter name in the installed Playwright version
+  // (1.63.0 — see node_modules/playwright/lib/common/index.js#builtInReporters: only
+  // list/line/dot/json/junit/null/github/html/blob/perfetto are recognized now). Using
+  // "default" made resolveReporters() fall through to require.resolve("default"), which
+  // always throws MODULE_NOT_FOUND and failed the entire E2E job before a single test ran
+  // (discovered on the first real CI run, commit 88df6d6). "list" matches the local
+  // (non-CI) reporter below for identical human-readable output in both environments.
+  reporter: process.env.CI ? [["list"], ["junit", { outputFile: "tests/coverage/junit-playwright.xml" }]] : "list",
   use: {
     baseURL: TEST_APP_URL,
     trace: "retain-on-failure",
