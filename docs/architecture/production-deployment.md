@@ -117,8 +117,9 @@ manualmente (`workflow_dispatch`, informando `ref`). Três jobs:
 | `PRODUCTION_BASE_URL` | URL pública (ex.: `https://app.seudominio.com.br`) usada no smoke test |
 
 O workflow `test.yml` executa typecheck, lint, build, unit, integração HTTP real (Postgres, Redis,
-app e worker) e E2E; o CD espera essa suíte completa passar. O workflow `ci.yml` também valida
-typecheck, lint e build.
+app e worker) e E2E; o CD espera essa suíte completa passar. (O workflow `ci.yml`, um skeleton
+redundante de uma passada anterior que cobria só typecheck/lint/build, foi removido — `test.yml`
+já inclui tudo que ele fazia.)
 
 **Pré-requisitos no VPS** (setup manual, uma vez — fora do escopo de um workflow de CI, é
 provisionamento inicial do host): Docker + plugin Docker Compose, Node.js 24+, `git clone` do
@@ -173,8 +174,8 @@ da passada de SRE (T9, roda depois desta). O que fica registrado aqui é só o p
   `ports` (override para lista vazia funcionou — sem `!override` o Compose CONCATENA listas entre
   arquivos em vez de substituir, testado explicitamente nesta passada), `caddy` com `80/tcp`,
   `443/tcp`, `443/udp` e os dois volumes nomeados (`caddy_data`, `caddy_config`).
-- `.github/workflows/cd-production.yml`, `ci.yml` e `test.yml` — **validado** sintaticamente
-  (`yaml.safe_load` via container Python descartável, os três arquivos parseiam sem erro). Não foi
+- `.github/workflows/cd-production.yml` e `test.yml` — **validado** sintaticamente
+  (`yaml.safe_load` via container Python descartável, os dois arquivos parseiam sem erro). Não foi
   possível validar a execução real do workflow (precisa de um VPS real, secrets configurados e um
   push/PR de fato — fora do alcance deste ambiente).
 - `bash -n` em `scripts/backup-postgres.sh`, `restore-postgres.sh`, `rotate-secrets.sh`,

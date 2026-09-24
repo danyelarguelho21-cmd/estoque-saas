@@ -20,7 +20,7 @@ Internet --HTTPS--> Caddy (80/443, TLS automático) --> app:3000 (rede interna D
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-O CD (`.github/workflows/cd-production.yml`) dispara após o `ci.yml` passar em `main`, builda e
+O CD (`.github/workflows/cd-production.yml`) dispara após o `test.yml` passar em `main`, builda e
 publica a imagem no GHCR (trilha de auditoria/rollback, não é o que roda em produção), faz deploy
 via SSH (`scripts/deploy.sh`: `git pull` + `npm ci` + `prisma migrate deploy` + `docker compose up
 -d --build`) e roda smoke test contra `/api/healthz`/`/api/readyz`. Rollback é manual

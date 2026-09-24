@@ -162,7 +162,7 @@ para que `vitest run tests/integration/rbac.test.ts` sozinho continue funcionand
 [`tests/integration/setup.ts`](../../tests/integration/setup.ts)).
 
 `npm run typecheck` e `npm run lint` (ambos `--workspaces --if-present`) mais os quatro comandos
-de teste acima são exatamente o que `.github/workflows/ci.yml` roda em todo PR — rode-os
+de teste acima são exatamente o que `.github/workflows/test.yml` roda em todo PR — rode-os
 localmente antes de abrir um PR (ver [Contributing](./contributing.md#antes-de-abrir-um-pr)).
 
 `tests/` é o **oracle de aceite de QA** — nunca enfraqueça um teste ali para fazer seu código

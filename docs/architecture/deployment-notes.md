@@ -99,7 +99,12 @@ deliberadamente fora do escopo do Dockerfile/compose desta passada (confirmado n
    dev; em produção, considerar encaminhar para um agregador (mesmo que simples, ex.: Vector/
    Fluent Bit para um destino gerenciado), já que não há acesso SSH constante ao VPS assumido.
 
-## CI (`.github/workflows/ci.yml`)
+## CI (histórico — `ci.yml` removido, ver `.github/workflows/test.yml`)
+
+> Nota adicionada depois: o `ci.yml` descrito abaixo foi um skeleton inicial (Wave A) e já
+> foi removido do repositório. `test.yml` (quality + unit + integration + e2e + performance)
+> e `cd-production.yml` (que dispara após `test.yml` passar em `main`) já existem e cobrem
+> tudo isto e mais. Seção mantida como registro histórico da decisão original.
 
 Skeleton criado nesta passada: `npm ci` → `prisma generate` → `typecheck` → `lint` → `test
 --workspaces --if-present` → `build --workspace services/app` → `docker build -f

@@ -79,7 +79,7 @@ suíte que decide se uma mudança está correta, não uma sugestão.
 
 ## Antes de abrir um PR
 
-Rode localmente exatamente o que `.github/workflows/ci.yml` e `.github/workflows/test.yml` rodam:
+Rode localmente exatamente o que `.github/workflows/test.yml` roda:
 
 ```bash
 npm run typecheck                                            # todos os workspaces
