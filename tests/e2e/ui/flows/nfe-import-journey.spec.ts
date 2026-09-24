@@ -17,6 +17,7 @@ import { DashboardPage } from "../pages/dashboard.page";
 import { makeNfeXml, makeNfeItem } from "../../../fixtures/factories/nfe.factory";
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { generateValidCnpj } from "../../../fixtures/cnpj";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -26,7 +27,7 @@ test("operator uploads NF-e XML, reviews matched items, and confirming updates t
   await signup.goto();
   await signup.completeSignup({
     companyName: `Empresa NFe ${Date.now()}`,
-    cnpj: Array.from({ length: 14 }, () => Math.floor(Math.random() * 10)).join(""),
+    cnpj: generateValidCnpj(),
     adminName: "Admin QA",
     adminEmail: email,
     password: "SenhaForte#123",

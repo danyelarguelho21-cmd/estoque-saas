@@ -13,6 +13,7 @@
 import { expect, test } from "@playwright/test";
 import { SignupPage } from "../pages/signup.page";
 import { DashboardPage } from "../pages/dashboard.page";
+import { generateValidCnpj } from "../../../fixtures/cnpj";
 
 test("finishing a sale redirects to the REAL sale's detail page, not /vendas/undefined", async ({ page }) => {
   const email = `qa-sale-${Date.now()}@example.com`;
@@ -20,7 +21,7 @@ test("finishing a sale redirects to the REAL sale's detail page, not /vendas/und
   await signup.goto();
   await signup.completeSignup({
     companyName: `Empresa Venda ${Date.now()}`,
-    cnpj: Array.from({ length: 14 }, () => Math.floor(Math.random() * 10)).join(""),
+    cnpj: generateValidCnpj(),
     adminName: "Admin QA",
     adminEmail: email,
     password: "SenhaForte#123",

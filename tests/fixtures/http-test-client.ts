@@ -7,6 +7,8 @@
 // Requires the app to be running — see tests/integration/docker-compose.test.yml and
 // tests/integration/setup.ts. If TEST_BASE_URL is unreachable, tests fail loudly (not skipped).
 
+import { generateValidCnpj } from "./cnpj";
+
 const BASE_URL = process.env.TEST_BASE_URL ?? "http://localhost:3100";
 
 export interface ApiResponse<T = unknown> {
@@ -135,7 +137,7 @@ export async function signUpAndLogin(
   const password = overrides.password ?? "SenhaForte#123";
   const signupRes = await client.post<{ tenantId: string; userId: string }>("/api/auth/signup", {
     companyName: overrides.companyName ?? "Empresa Teste",
-    cnpj: overrides.cnpj ?? Array.from({ length: 14 }, () => Math.floor(Math.random() * 10)).join(""),
+    cnpj: overrides.cnpj ?? generateValidCnpj(),
     adminName: overrides.adminName ?? "Admin Teste",
     adminEmail: email,
     password,

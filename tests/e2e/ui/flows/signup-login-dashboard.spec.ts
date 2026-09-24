@@ -13,12 +13,13 @@ import { expect, test } from "@playwright/test";
 import { SignupPage } from "../pages/signup.page";
 import { LoginPage } from "../pages/login.page";
 import { DashboardPage } from "../pages/dashboard.page";
+import { generateValidCnpj } from "../../../fixtures/cnpj";
 
 function uniqueEmail() {
   return `qa-${Date.now()}-${Math.floor(Math.random() * 10000)}@example.com`;
 }
 function uniqueCnpj() {
-  return Array.from({ length: 14 }, () => Math.floor(Math.random() * 10)).join("");
+  return generateValidCnpj();
 }
 
 test.describe("Signup -> Login -> Dashboard journey (Pattern 5)", () => {
