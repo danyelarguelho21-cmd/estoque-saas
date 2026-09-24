@@ -64,6 +64,12 @@ const testServerEnv = {
 export default defineConfig({
   testDir: __dirname,
   testMatch: ["**/*.spec.ts", "**/*.e2e.ts"],
+  // Bootstraps the isolated test Postgres (schema + app_user/platform_admin_role roles + one
+  // seeded plan) before any webServer starts — see global-setup.ts for why this is required
+  // (the vitest integration suite gets this for free via db-test-helpers.ts; Playwright specs
+  // never imported it, so E2E's own Postgres was never migrated — discovered in CI run
+  // 36065367454, "Authentication failed ... for `app_user`").
+  globalSetup: path.join(__dirname, "global-setup.ts"),
   timeout: 30_000,
   expect: { timeout: 10_000 },
   fullyParallel: false, // suites share one app instance + DB; parallel workers would race on tenant/plan seed data
