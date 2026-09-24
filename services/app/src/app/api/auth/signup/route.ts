@@ -1,11 +1,16 @@
 import { z } from "zod";
 import { signupTenant } from "@/modules/auth";
 import { created, handleRoute, parseJsonBody } from "@/lib/http";
+import { isValidCnpj } from "@/lib/format";
 import { RATE_LIMITS, checkRateLimit, clientIp } from "@/lib/rate-limit";
 
 const SignupSchema = z.object({
   companyName: z.string().min(1),
-  cnpj: z.string().min(1),
+  // Reforço de defesa em profundidade: o formulário (services/app/src/app/cadastro/page.tsx) já
+  // valida o dígito verificador antes de enviar, mas esta rota é pública e pode ser chamada
+  // diretamente (sem passar pelo form) — sem isto, um CNPJ com dígito errado só falharia dias
+  // depois, no worker, quando o PagBank rejeitasse a primeira cobrança.
+  cnpj: z.string().min(1).refine(isValidCnpj, { message: "CNPJ inválido." }),
   adminName: z.string().min(1),
   adminEmail: z.string().email(),
   password: z.string().min(8),

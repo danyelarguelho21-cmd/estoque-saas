@@ -67,3 +67,33 @@ export function cnpjMask(value: string): string {
     .replace(/\.(\d{3})(\d)/, ".$1/$2")
     .replace(/(\d{4})(\d)/, "$1-$2");
 }
+
+/**
+ * Valida o dígito verificador do CNPJ (algoritmo oficial da Receita Federal, módulo 11).
+ *
+ * Achado ao vivo (24/09/2026): a máscara (`cnpjMask`) só formata a digitação, nunca validou o
+ * check digit — um CNPJ com dígito errado passava no cadastro sem aviso, e só ia falhar dias
+ * depois, no worker, quando o PagBank rejeitasse a cobrança com "customer.tax_id must be a valid
+ * CPF or CNPJ" (tarde demais para o lojista corrigir na hora). Aceita a string com ou sem máscara.
+ */
+export function isValidCnpj(value: string): boolean {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length !== 14) return false;
+  // Todos os dígitos iguais (ex.: "00000000000000") passam no cálculo do módulo 11 mas não são
+  // CNPJs válidos — a Receita Federal rejeita esses explicitamente.
+  if (/^(\d)\1{13}$/.test(digits)) return false;
+
+  const calcCheckDigit = (base: string, weights: number[]): number => {
+    const sum = base
+      .split("")
+      .reduce((total, digit, index) => total + Number(digit) * weights[index]!, 0);
+    const remainder = sum % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+
+  const first12 = digits.slice(0, 12);
+  const digit13 = calcCheckDigit(first12, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const digit14 = calcCheckDigit(first12 + digit13, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+
+  return digits === `${first12}${digit13}${digit14}`;
+}

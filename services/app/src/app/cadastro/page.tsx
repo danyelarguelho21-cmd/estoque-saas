@@ -15,7 +15,7 @@ import { PageSpinner } from "@/components/ui/spinner";
 import { billingApi } from "@/lib/api/billing";
 import { authApi } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
-import { cnpjMask } from "@/lib/format";
+import { cnpjMask, isValidCnpj } from "@/lib/format";
 import { PagBankNotLoadedError, tokenizeCard } from "@/lib/payments/pagbank";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +49,10 @@ export default function SignupPage() {
     setError(null);
     if (!planId) {
       setError("Escolha um plano para continuar.");
+      return;
+    }
+    if (!isValidCnpj(cnpj)) {
+      setError("CNPJ inválido — confira os números digitados.");
       return;
     }
     setSubmitting(true);
