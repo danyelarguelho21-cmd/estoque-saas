@@ -21,3 +21,10 @@ tests/coverage/*.xml
 playwright-report/
 test-results/
 
+
+# Scripts/logs manuais de depuração local (gerados durante sessões de suporte no Windows —
+# ver .bat na Área de Trabalho) — nunca fazem parte do código-fonte, mas ficam na raiz do repo
+# porque é onde os scripts .bat precisam rodar (cd para a pasta do projeto). Nunca commitar.
+/.data/
+/*_log.txt
+/atualizar_planos.sql
