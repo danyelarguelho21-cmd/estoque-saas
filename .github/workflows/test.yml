@@ -170,7 +170,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install k6
         run: |
-          curl -sL https://github.com/grafana/k6/releases/latest/download/k6-linux-amd64.tar.gz | tar xz --strip-components 1
+          # k6's release assets are named "k6-<tag>-linux-amd64.tar.gz" (the plain
+          # "k6-linux-amd64.tar.gz" this used to fetch stopped existing — that name now 404s,
+          # discovered when this job finally ran in CI: `.../latest/download/k6-linux-amd64.tar.gz`
+          # 302s to a real release but then 404s, so `tar` got an HTML error page instead of a
+          # gzip stream ("gzip: stdin: not in gzip format"). Resolve the actual tag + asset name
+          # from the GitHub API instead of hardcoding either.
+          K6_VERSION=$(curl -sL https://api.github.com/repos/grafana/k6/releases/latest | grep -m1 '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+          curl -sL "https://github.com/grafana/k6/releases/download/${K6_VERSION}/k6-${K6_VERSION}-linux-amd64.tar.gz" | tar xz --strip-components 1
       - name: Run product-listing load test
         env:
           TEST_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
