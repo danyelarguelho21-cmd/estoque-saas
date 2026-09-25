@@ -92,9 +92,16 @@ export default defineConfig({
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
+  // "dev:e2e" (not "dev") deliberately runs plain `next dev` (Turbopack) instead of the
+  // workspace's --webpack-forced dev script. That --webpack override exists to dodge a
+  // Tailwind CSS corruption bug hit locally (see services/app/package.json), but forcing it
+  // here too made this same E2E suite's login step start timing out in CI — Playwright's
+  // dashboard-heading wait exceeding 30s specifically on the explicit /entrar login, which
+  // never happened back when this server ran under Turbopack. Keeping E2E on Turbopack avoids
+  // that regression without touching the local dev workaround.
   webServer: [
     {
-      command: "npm run dev --workspace services/app -- -p 3100",
+      command: "npm run dev:e2e --workspace services/app -- -p 3100",
       cwd: REPO_ROOT,
       url: TEST_APP_URL + "/api/healthz",
       reuseExistingServer: false,
