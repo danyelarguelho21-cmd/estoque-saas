@@ -12,8 +12,8 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "estoque-saas",
-    template: "%s · estoque-saas",
+    default: "Zolo",
+    template: "%s · Zolo",
   },
   description: "Gestão de estoque por assinatura para pequenas e médias empresas brasileiras",
 };

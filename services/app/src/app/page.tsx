@@ -21,5 +21,5 @@ export default function HomePage() {
     }
   }, [status, router]);
 
-  return <PageSpinner label="Carregando estoque-saas…" />;
+  return <PageSpinner label="Carregando Zolo…" />;
 }

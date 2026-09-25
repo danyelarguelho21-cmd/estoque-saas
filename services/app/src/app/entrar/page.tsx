@@ -45,7 +45,7 @@ function LoginForm() {
   }
 
   return (
-    <AuthShell title="Entrar" description="Acesse sua conta estoque-saas">
+    <AuthShell title="Entrar" description="Acesse sua conta Zolo">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
         {error && (
           <Alert variant="danger" title="Não foi possível entrar">

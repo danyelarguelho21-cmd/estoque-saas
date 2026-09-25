@@ -15,7 +15,7 @@ export function Sidebar({ className }: { className?: string }) {
     <nav aria-label="Navegação principal" className={cn("flex h-full flex-col gap-1 p-4", className)}>
       <Link href="/painel" className="mb-6 flex items-center gap-2 px-2 text-base font-semibold text-slate-900">
         <Boxes className="h-6 w-6 text-[var(--color-primary)]" aria-hidden />
-        estoque-saas
+        Zolo
       </Link>
       {TENANT_NAV_ITEMS.filter((item) => !item.permission || can(item.permission)).map((item) => {
         const isActive = item.matchPrefix ? pathname.startsWith(item.href) : pathname === item.href;

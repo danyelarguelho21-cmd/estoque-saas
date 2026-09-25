@@ -46,7 +46,7 @@ export default function PlatformAdminLoginPage() {
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
           <ShieldCheck className="h-8 w-8 text-emerald-400" aria-hidden />
           <h1 className="text-lg font-semibold text-white">Painel administrativo</h1>
-          <p className="text-sm text-slate-400">Acesso restrito à equipe estoque-saas</p>
+          <p className="text-sm text-slate-400">Acesso restrito à equipe Zolo</p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
