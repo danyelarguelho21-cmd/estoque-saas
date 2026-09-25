@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
 import { CreditCard, QrCode } from "lucide-react";
@@ -21,13 +21,24 @@ import { cn } from "@/lib/utils";
 
 type PaymentMethod = "card" | "pix_boleto";
 
-export default function SignupPage() {
+function SignupPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { update: refreshSession } = useSession();
   const plansQuery = useQuery({ queryKey: ["plans"], queryFn: billingApi.listPlans });
+  const plans = plansQuery.data ?? [];
 
   const [step, setStep] = useState<1 | 2>(1);
   const [planId, setPlanId] = useState<string | null>(null);
+
+  // Pré-seleciona o plano quando a pessoa chega pelo botão "Assinar X" da landing page
+  // (?plano=Pro), em vez de fazer ela escolher de novo o mesmo plano que já clicou. Calculado
+  // direto na renderização (sem efeito) para não disparar setState dentro de um useEffect.
+  const wantedPlanName = searchParams.get("plano");
+  const preselectedPlan = !planId && wantedPlanName
+    ? plans.find((p) => p.name.toLowerCase() === wantedPlanName.toLowerCase())
+    : undefined;
+  const selectedPlanId = planId ?? preselectedPlan?.id ?? null;
 
   const [companyName, setCompanyName] = useState("");
   const [cnpj, setCnpj] = useState("");
@@ -47,7 +58,7 @@ export default function SignupPage() {
   async function handleStep1Submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    if (!planId) {
+    if (!selectedPlanId) {
       setError("Escolha um plano para continuar.");
       return;
     }
@@ -57,7 +68,7 @@ export default function SignupPage() {
     }
     setSubmitting(true);
     try {
-      await authApi.signup({ companyName, cnpj, adminName, adminEmail, password, planId });
+      await authApi.signup({ companyName, cnpj, adminName, adminEmail, password, planId: selectedPlanId });
       try {
         await authApi.login({ email: adminEmail, password });
         await refreshSession();
@@ -81,7 +92,7 @@ export default function SignupPage() {
   async function handleStep2Submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    if (!planId) return;
+    if (!selectedPlanId) return;
     setSubmitting(true);
 
     try {
@@ -94,9 +105,9 @@ export default function SignupPage() {
           expYear: expYear ?? "",
           cvv: cardCvv,
         });
-        await billingApi.createSubscription({ planId, paymentMethod: "card", cardToken });
+        await billingApi.createSubscription({ planId: selectedPlanId, paymentMethod: "card", cardToken });
       } else {
-        await billingApi.createSubscription({ planId, paymentMethod: "pix_boleto" });
+        await billingApi.createSubscription({ planId: selectedPlanId, paymentMethod: "pix_boleto" });
       }
       router.push("/painel");
     } catch (err) {
@@ -118,15 +129,13 @@ export default function SignupPage() {
     return <PageSpinner label="Carregando planos…" />;
   }
 
-  const plans = plansQuery.data ?? [];
-
   return (
     <AuthShell
       title={step === 1 ? "Criar sua empresa" : "Forma de pagamento"}
       description={
         step === 1
           ? "Onboarding self-service — leva menos de 2 minutos"
-          : `Plano selecionado: ${plans.find((p) => p.id === planId)?.name ?? ""}`
+          : `Plano selecionado: ${plans.find((p) => p.id === selectedPlanId)?.name ?? ""}`
       }
       wide
     >
@@ -145,7 +154,7 @@ export default function SignupPage() {
             <p className="mb-3 text-sm font-medium text-slate-900">Escolha um plano</p>
             <div className="grid gap-3 sm:grid-cols-3">
               {plans.map((plan) => (
-                <PlanCard key={plan.id} plan={plan} selected={planId === plan.id} onSelect={setPlanId} />
+                <PlanCard key={plan.id} plan={plan} selected={selectedPlanId === plan.id} onSelect={setPlanId} />
               ))}
             </div>
           </div>
@@ -258,5 +267,13 @@ export default function SignupPage() {
         </form>
       )}
     </AuthShell>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense>
+      <SignupPageInner />
+    </Suspense>
   );
 }
