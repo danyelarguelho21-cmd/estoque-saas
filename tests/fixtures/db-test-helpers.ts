@@ -42,10 +42,13 @@ const MIGRATION_FILES = [
   "0007_platform_list_active_tenants_function.sql",
   "0010_role_timeouts.sql",
 ].map((f) => path.join(REPO_ROOT, "schemas/migrations", f));
-// The SQL reference migrations above predate the product-SKU change. Apply the corresponding
-// Prisma migration too so the isolated HTTP test schema matches the current production schema.
+// The SQL reference migrations above predate the product-SKU and person-type/CPF changes. Apply
+// the corresponding Prisma migrations too so the isolated HTTP test schema matches the current
+// production schema (same pattern for every Prisma-only migration going forward — this list is
+// NOT auto-discovered, it must be updated by hand each time, see the incident above).
 MIGRATION_FILES.push(
   path.join(REPO_ROOT, "libs/shared/prisma/migrations/20260923180000_product_sku_optional/migration.sql"),
+  path.join(REPO_ROOT, "libs/shared/prisma/migrations/20260925183026_add_person_type_and_cpf/migration.sql"),
 );
 
 // GUARD (root-cause fix, found via manual e2e testing): this module's seed helpers
