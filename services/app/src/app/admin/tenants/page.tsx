@@ -110,7 +110,7 @@ export default function PlatformTenantsPage() {
                     <TableRow key={tenant.id} className="hover:bg-slate-800/50">
                       <TableCell className="text-slate-100">
                         {tenant.name}
-                        <span className="block text-xs text-slate-500">{tenant.cnpj}</span>
+                        <span className="block text-xs text-slate-500">{tenant.cnpj ?? tenant.cpf}</span>
                       </TableCell>
                       <TableCell>{tenant.planName}</TableCell>
                       <TableCell>

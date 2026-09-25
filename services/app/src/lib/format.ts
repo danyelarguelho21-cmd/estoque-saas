@@ -68,6 +68,42 @@ export function cnpjMask(value: string): string {
     .replace(/(\d{4})(\d)/, "$1-$2");
 }
 
+export function cpfMask(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  return digits
+    .replace(/^(\d{3})(\d)/, "$1.$2")
+    .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d)/, ".$1-$2");
+}
+
+/**
+ * Valida o dígito verificador do CPF (algoritmo oficial da Receita Federal, módulo 11) — mesma
+ * lógica de isValidCnpj logo abaixo, adaptada aos pesos e ao tamanho do CPF (11 dígitos).
+ * Suporte a pessoa física no cadastro (pequeno empreendedor sem CNPJ) — ver SignupSchema em
+ * api/auth/signup/route.ts.
+ */
+export function isValidCpf(value: string): boolean {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length !== 11) return false;
+  // Todos os dígitos iguais (ex.: "00000000000") passam no cálculo do módulo 11 mas não são CPFs
+  // válidos — a Receita Federal rejeita esses explicitamente (mesmo caso do isValidCnpj).
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+
+  const calcCheckDigit = (base: string, weights: number[]): number => {
+    const sum = base
+      .split("")
+      .reduce((total, digit, index) => total + Number(digit) * weights[index]!, 0);
+    const remainder = (sum * 10) % 11;
+    return remainder === 10 ? 0 : remainder;
+  };
+
+  const first9 = digits.slice(0, 9);
+  const digit10 = calcCheckDigit(first9, [10, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const digit11 = calcCheckDigit(first9 + digit10, [11, 10, 9, 8, 7, 6, 5, 4, 3, 2]);
+
+  return digits === `${first9}${digit10}${digit11}`;
+}
+
 /**
  * Valida o dígito verificador do CNPJ (algoritmo oficial da Receita Federal, módulo 11).
  *

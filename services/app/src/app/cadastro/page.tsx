@@ -15,7 +15,7 @@ import { PageSpinner } from "@/components/ui/spinner";
 import { billingApi } from "@/lib/api/billing";
 import { authApi } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
-import { cnpjMask, isValidCnpj } from "@/lib/format";
+import { cnpjMask, cpfMask, isValidCnpj, isValidCpf } from "@/lib/format";
 import { PagBankNotLoadedError, tokenizeCard } from "@/lib/payments/pagbank";
 import { cn } from "@/lib/utils";
 
@@ -41,7 +41,9 @@ function SignupPageInner() {
   const selectedPlanId = planId ?? preselectedPlan?.id ?? null;
 
   const [companyName, setCompanyName] = useState("");
+  const [personType, setPersonType] = useState<"PF" | "PJ">("PJ");
   const [cnpj, setCnpj] = useState("");
+  const [cpf, setCpf] = useState("");
   const [adminName, setAdminName] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -62,13 +64,21 @@ function SignupPageInner() {
       setError("Escolha um plano para continuar.");
       return;
     }
-    if (!isValidCnpj(cnpj)) {
-      setError("CNPJ inválido — confira os números digitados.");
+    if (personType === "PJ" ? !isValidCnpj(cnpj) : !isValidCpf(cpf)) {
+      setError(
+        personType === "PJ"
+          ? "CNPJ inválido — confira os números digitados."
+          : "CPF inválido — confira os números digitados.",
+      );
       return;
     }
     setSubmitting(true);
     try {
-      await authApi.signup({ companyName, cnpj, adminName, adminEmail, password, planId: selectedPlanId });
+      await authApi.signup(
+        personType === "PJ"
+          ? { personType: "PJ", companyName, cnpj, adminName, adminEmail, password, planId: selectedPlanId }
+          : { personType: "PF", companyName, cpf, adminName, adminEmail, password, planId: selectedPlanId },
+      );
       try {
         await authApi.login({ email: adminEmail, password });
         await refreshSession();
@@ -80,7 +90,11 @@ function SignupPageInner() {
       setStep(2);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setError("CNPJ ou e-mail já cadastrado. Tente entrar ou use outros dados.");
+        setError(
+          personType === "PJ"
+            ? "CNPJ ou e-mail já cadastrado. Tente entrar ou use outros dados."
+            : "CPF ou e-mail já cadastrado. Tente entrar ou use outros dados.",
+        );
       } else {
         setError("Não foi possível criar sua empresa agora. Tente novamente em instantes.");
       }
@@ -159,19 +173,59 @@ function SignupPageInner() {
             </div>
           </div>
 
+          <div>
+            <p className="mb-3 text-sm font-medium text-slate-900">Você vai cadastrar como</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setPersonType("PJ")}
+                aria-pressed={personType === "PJ"}
+                className={cn(
+                  "rounded-lg border-2 p-3 text-left text-sm font-medium",
+                  personType === "PJ" ? "border-[var(--color-primary)] bg-blue-50/40" : "border-[var(--color-border)]",
+                )}
+              >
+                Empresa (CNPJ)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPersonType("PF")}
+                aria-pressed={personType === "PF"}
+                className={cn(
+                  "rounded-lg border-2 p-3 text-left text-sm font-medium",
+                  personType === "PF" ? "border-[var(--color-primary)] bg-blue-50/40" : "border-[var(--color-border)]",
+                )}
+              >
+                Pessoa física / autônomo (CPF)
+              </button>
+            </div>
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Nome da empresa" htmlFor="companyName" required>
+            <Field label={personType === "PJ" ? "Nome da empresa" : "Seu nome ou nome do negócio"} htmlFor="companyName" required>
               <Input id="companyName" required value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
             </Field>
-            <Field label="CNPJ" htmlFor="cnpj" required>
-              <Input
-                id="cnpj"
-                required
-                value={cnpj}
-                onChange={(e) => setCnpj(cnpjMask(e.target.value))}
-                placeholder="00.000.000/0000-00"
-              />
-            </Field>
+            {personType === "PJ" ? (
+              <Field label="CNPJ" htmlFor="cnpj" required>
+                <Input
+                  id="cnpj"
+                  required
+                  value={cnpj}
+                  onChange={(e) => setCnpj(cnpjMask(e.target.value))}
+                  placeholder="00.000.000/0000-00"
+                />
+              </Field>
+            ) : (
+              <Field label="CPF" htmlFor="cpf" required>
+                <Input
+                  id="cpf"
+                  required
+                  value={cpf}
+                  onChange={(e) => setCpf(cpfMask(e.target.value))}
+                  placeholder="000.000.000-00"
+                />
+              </Field>
+            )}
             <Field label="Seu nome" htmlFor="adminName" required>
               <Input id="adminName" required value={adminName} onChange={(e) => setAdminName(e.target.value)} />
             </Field>

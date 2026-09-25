@@ -28,7 +28,9 @@ export interface ApiErrorBody {
 export interface Tenant {
   id: string;
   name: string;
-  cnpj: string;
+  personType: "PF" | "PJ";
+  cnpj: string | null;
+  cpf: string | null;
   planId: string;
   consolidatedStock: boolean;
   perishableTrackingEnabled: boolean;
@@ -327,7 +329,9 @@ export interface Invoice {
 export interface TenantAdminSummary {
   id: string;
   name: string;
-  cnpj: string;
+  personType: "PF" | "PJ";
+  cnpj: string | null;
+  cpf: string | null;
   planName: string;
   subscriptionStatus: SubscriptionStatus;
   status: "active" | "suspended" | "canceled";

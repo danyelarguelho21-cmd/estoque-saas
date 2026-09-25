@@ -4,14 +4,25 @@ import { api } from "./client";
  * Endpoints próprios do contrato (`/api/auth/signup` e `/api/auth/login`). Logout continua
  * usando `signOut` de `next-auth/react` para deixar o framework limpar a sessão no navegador.
  */
-export interface SignupInput {
-  companyName: string;
-  cnpj: string;
-  adminName: string;
-  adminEmail: string;
-  password: string;
-  planId: string;
-}
+export type SignupInput =
+  | {
+      personType: "PJ";
+      companyName: string;
+      cnpj: string;
+      adminName: string;
+      adminEmail: string;
+      password: string;
+      planId: string;
+    }
+  | {
+      personType: "PF";
+      companyName: string;
+      cpf: string;
+      adminName: string;
+      adminEmail: string;
+      password: string;
+      planId: string;
+    };
 
 export interface SignupResult {
   tenantId: string;

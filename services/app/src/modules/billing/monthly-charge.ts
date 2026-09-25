@@ -77,6 +77,16 @@ async function generateChargeForTenant(tenantId: string): Promise<boolean> {
     dueDate.setDate(dueDate.getDate() + 5);
     const dueDateIso = dueDate.toISOString().slice(0, 10);
 
+    // Suporte a pessoa física: tenant.cnpj é NULL para tenants PF (ver Tenant.personType) — nesse
+    // caso o CPF é o documento a enviar. Exatamente um dos dois está preenchido (garantido no
+    // signup), então este fallback nunca deveria resultar em string vazia em produção; falha
+    // fechada (lança) se acontecer, em vez de mandar tax_id="" pro PagBank de novo (ver o BUG FIX
+    // logo acima — essa classe de erro já mordeu a produção uma vez).
+    const customerTaxId = tenant.cnpj ?? tenant.cpf;
+    if (!customerTaxId) {
+      throw new Error(`Tenant ${tenantId} sem CNPJ e sem CPF cadastrado — não é possível cobrar.`);
+    }
+
     const provider = getPaymentProvider();
     const charge = await provider.createOneOffCharge({
       tenantId,
@@ -85,7 +95,7 @@ async function generateChargeForTenant(tenantId: string): Promise<boolean> {
       method: "pix",
       customerEmail,
       customerName: tenant.name,
-      customerTaxId: tenant.cnpj,
+      customerTaxId,
     });
 
     const invoice = await tx.invoice.create({

@@ -5,7 +5,9 @@ import { hashPassword } from "./password";
 
 export interface SignupInput {
   companyName: string;
-  cnpj: string;
+  personType: "PF" | "PJ";
+  cnpj: string | null;
+  cpf: string | null;
   adminName: string;
   adminEmail: string;
   password: string;
@@ -19,6 +21,8 @@ export interface SignupResult {
 
 // Onboarding self-service (BRD Epic 1 / api/openapi/auth.yaml#signup):
 // cria tenant + primeiro usuário admin + assinatura em `trialing` numa única transação.
+// Aceita pessoa jurídica (CNPJ) OU pessoa física (CPF) — personType decide qual dos dois é
+// gravado; o outro fica NULL (o Zod na rota já garante que exatamente um dos dois chegou aqui).
 // paymentMethod da assinatura ainda não é conhecido neste passo (o usuário escolhe/paga depois via
 // /api/billing/subscription) — gravamos um placeholder ('pix_boleto') que é substituído quando o
 // tenant efetivamente assina um plano pago (modules/billing atualiza a MESMA linha, não cria outra).
@@ -35,7 +39,14 @@ export async function signupTenant(input: SignupInput): Promise<SignupResult> {
   try {
     await withTenant(tenantId, async (tx) => {
       await tx.tenant.create({
-        data: { id: tenantId, name: input.companyName, cnpj: input.cnpj, planId: input.planId },
+        data: {
+          id: tenantId,
+          name: input.companyName,
+          personType: input.personType,
+          cnpj: input.cnpj,
+          cpf: input.cpf,
+          planId: input.planId,
+        },
       });
       await tx.user.create({
         data: {
@@ -66,7 +77,9 @@ export async function signupTenant(input: SignupInput): Promise<SignupResult> {
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      throw new ConflictError("CNPJ já cadastrado.", { field: "cnpj" });
+      const field = input.personType === "PF" ? "cpf" : "cnpj";
+      const label = input.personType === "PF" ? "CPF" : "CNPJ";
+      throw new ConflictError(`${label} já cadastrado.`, { field });
     }
     throw err;
   }

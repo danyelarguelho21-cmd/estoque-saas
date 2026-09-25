@@ -47,7 +47,13 @@ model PlatformAdmin {
 model Tenant {
   id                         String   @id @default(uuid()) @db.Uuid
   name                       String
-  cnpj                       String   @unique
+  // Pessoa jurídica (CNPJ) OU pessoa física (CPF) — exatamente um dos dois é preenchido,
+  // validado na camada de aplicação (ver isValidCnpj/isValidCpf em src/lib/format.ts e
+  // SignupSchema em api/auth/signup/route.ts). NULL em ambos ou nos dois ao mesmo tempo nunca
+  // deveria acontecer, mas o banco não força isso via CHECK constraint — é reforçado no signup.
+  personType                 String   @default("PJ") @map("person_type") // "PF" | "PJ"
+  cnpj                       String?  @unique
+  cpf                        String?  @unique
   planId                     String   @map("plan_id") @db.Uuid
   plan                       Plan     @relation(fields: [planId], references: [id])
   consolidatedStock          Boolean  @default(false) @map("consolidated_stock")

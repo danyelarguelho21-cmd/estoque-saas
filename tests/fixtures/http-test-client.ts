@@ -136,6 +136,7 @@ export async function signUpAndLogin(
   const email = overrides.adminEmail ?? `admin-${Math.random().toString(36).slice(2, 8)}@example.com`;
   const password = overrides.password ?? "SenhaForte#123";
   const signupRes = await client.post<{ tenantId: string; userId: string }>("/api/auth/signup", {
+    personType: "PJ" as const,
     companyName: overrides.companyName ?? "Empresa Teste",
     cnpj: overrides.cnpj ?? generateValidCnpj(),
     adminName: overrides.adminName ?? "Admin Teste",

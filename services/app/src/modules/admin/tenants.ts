@@ -38,7 +38,9 @@ export async function listTenantsAdmin(filters: ListTenantsAdminFilters) {
       return {
         id: tenant.id,
         name: tenant.name,
+        personType: tenant.personType as "PF" | "PJ",
         cnpj: tenant.cnpj,
+        cpf: tenant.cpf,
         planName: tenant.plan.name,
         subscriptionStatus: subscription?.status ?? "trialing",
         status: tenant.status,
