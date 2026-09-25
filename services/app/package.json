@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "dotenv -e ../../.env -- next dev --webpack",
-    "dev:e2e": "dotenv -e ../../.env -- next dev",
+    "dev:e2e": "dotenv -e ../../.env -- next dev --turbopack",
     "build": "dotenv -e ../../.env -- next build --webpack",
     "start": "dotenv -e ../../.env -- next start",
     "worker": "dotenv -e ../../.env -- tsx src/worker/index.ts",

@@ -157,8 +157,16 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
+          # CI's reporter is [list, junit] (see playwright.config.ts) — no "html" reporter, so
+          # playwright-report/ is never written; the actual per-failure screenshots/videos/traces
+          # land in tests/test-results/ (Playwright's default outputDir given testDir=tests/e2e).
+          # The old path here silently uploaded nothing ("No files were found") on every failure,
+          # so every E2E debugging session had to re-run and scrape the text log instead of
+          # looking at an actual screenshot/trace.
           name: playwright-report
-          path: playwright-report/
+          path: |
+            tests/test-results/
+            tests/coverage/junit-playwright.xml
           retention-days: 14
 
   performance:
