@@ -106,6 +106,15 @@ export async function processNfeImportJob(tenantId: string, importId: string, st
         },
       });
     } catch (err) {
+      // processNfeImportJob captura o erro aqui e nunca relança — por design (ADR-005: um XML
+      // malformado não deve derrubar o worker nem re-tentar indefinidamente). Isso significa que
+      // o BullMQ nunca emite "failed" pra esse job (worker/index.ts não loga nada) e a única
+      // trilha de auditoria é a coluna errorMessage, que hoje nenhuma rota/tela expõe. Loga aqui
+      // pra sempre existir um rastro operacional — achado testando o import de NF-e em dev (um
+      // worker "fantasma" de uma execução anterior estava consumindo os jobs, mascarando o
+      // comportamento real; sem esse log, teria sido bem mais difícil de diagnosticar).
+      console.error(`[nfe-import ${importId}] falha ao processar:`, err instanceof Error ? err.message : err);
+      if (err instanceof Error && err.stack) console.error(err.stack);
       await tx.nfeImport.update({
         where: { id: importId },
         data: { status: "failed", errorMessage: err instanceof Error ? err.message : "Erro desconhecido ao processar XML." },
