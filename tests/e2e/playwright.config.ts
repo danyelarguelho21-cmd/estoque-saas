@@ -108,6 +108,9 @@ export default defineConfig({
       timeout: 60_000,
       env: {
         ...testServerEnv,
+        // Isolated from services/app/.next (the local `npm run dev` / `next build` cache dir) —
+        // see the comment on `distDir` in services/app/next.config.ts for why this exists.
+        NEXT_DIST_DIR: ".next-e2e",
         PAGBANK_API_KEY: "e2e-no-gateway-key",
         PAGBANK_BASE_URL: "http://127.0.0.1:1",
         PAGBANK_WEBHOOK_SECRET: "e2e-webhook-secret-not-real",
