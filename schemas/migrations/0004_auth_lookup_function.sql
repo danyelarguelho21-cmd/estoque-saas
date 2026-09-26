@@ -21,6 +21,8 @@
 -- aplicação (modules/auth) decide (hoje: tenta autenticar contra cada uma até achar a senha
 -- correta — mesmo comportamento de "e-mail pode repetir entre empresas distintas").
 
+DROP FUNCTION IF EXISTS auth_lookup_user_by_email(text);
+
 CREATE OR REPLACE FUNCTION auth_lookup_user_by_email(p_email text)
 RETURNS TABLE (
     tenant_id       uuid,
