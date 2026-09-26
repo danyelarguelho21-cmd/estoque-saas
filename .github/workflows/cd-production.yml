@@ -110,7 +110,7 @@ jobs:
             else
               CHECKOUT_REF="$DEPLOY_REF"
             fi
-            PREFLIGHT_SCRIPT=$(mktemp)
+            PREFLIGHT_SCRIPT=$(mktemp --suffix=.mjs)
             trap 'rm -f "$PREFLIGHT_SCRIPT"' EXIT
             git show "$CHECKOUT_REF:scripts/validate-production-env.mjs" > "$PREFLIGHT_SCRIPT"
             node --env-file=.env "$PREFLIGHT_SCRIPT"
