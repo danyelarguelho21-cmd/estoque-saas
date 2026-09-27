@@ -50,7 +50,14 @@ services:
       # Admin API do Caddy escuta em 127.0.0.1:2019 dentro do container por padrão — não expõe
       # nada além do já publicado em 80/443. wget é o busybox da imagem alpine (mesma lógica do
       # healthcheck de `app`, que usa wget contra node:24-alpine).
-      test: ["CMD", "wget", "-qO-", "http://localhost:2019/config/"]
+      #
+      # BUG FIX (achado em produção — container ficava "unhealthy" indefinidamente, 31h+ de
+      # FailingStreak, apesar do Caddy servindo tráfego real normalmente em 80/443): "localhost"
+      # resolve para ::1 (IPv6) primeiro dentro deste container (`getent hosts localhost`), mas a
+      # API admin só faz bind em 127.0.0.1 (IPv4) — nada escuta em [::1]:2019, então o wget sempre
+      # dava "connection refused". `wget http://127.0.0.1:2019/config/` manualmente confirma que a
+      # API responde normalmente. IP literal em vez do hostname evita a resolução ambígua.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
       interval: 15s
       timeout: 5s
       retries: 5
