@@ -13,15 +13,22 @@ interface GatewayRefLookupRow {
 //
 // rawBody DEVE ser o corpo bruto da requisição (string, não um objeto já reparseado) — a
 // verificação de assinatura do PagBank é byte-sensível (ver PagBankProvider.verifyWebhookSignature).
+//
+// Log em cada decisão do fluxo (nunca o rawBody/signature/payload inteiro — só tipo de evento e
+// ids) — até esta mudança o caminho de sucesso não deixava rastro nenhum: um 200 de "sem match" e
+// um 200 de "fatura realmente atualizada" eram indistinguíveis de fora, e uma assinatura inválida
+// (UnauthorizedError é um AppError) nem cai no log genérico de erro não tratado do handleRoute.
 export async function processPagBankWebhook(rawBody: string, signatureHeader: string | null): Promise<void> {
   const provider = getPaymentProvider();
 
   if (!signatureHeader || !provider.verifyWebhookSignature(rawBody, signatureHeader)) {
+    console.warn("[webhook-pagbank] assinatura ausente ou inválida — requisição rejeitada (401)");
     throw new UnauthorizedError("Assinatura do webhook inválida.");
   }
 
   const payload = JSON.parse(rawBody) as unknown;
   const event = provider.parseWebhookEvent(payload);
+  console.log(`[webhook-pagbank] recebido, assinatura válida: type=${event.type}`);
 
   const chargeId = event.type === "charge.paid" || event.type === "charge.failed" ? event.gatewayChargeId : null;
   const subscriptionId = event.type === "subscription.canceled" ? event.gatewaySubscriptionId : null;
@@ -33,6 +40,7 @@ export async function processPagBankWebhook(rawBody: string, signatureHeader: st
   if (!match) {
     // Evento não corresponde a nenhuma fatura/assinatura conhecida — descarta silenciosamente
     // (pode ser um evento de um ambiente diferente, ex: sandbox vs produção). Nunca lança 500 aqui.
+    console.warn(`[webhook-pagbank] sem match: type=${event.type} chargeId=${chargeId ?? "-"} subscriptionId=${subscriptionId ?? "-"} — descartado`);
     return;
   }
 
@@ -51,10 +59,18 @@ export async function processPagBankWebhook(rawBody: string, signatureHeader: st
         where: { id: match.invoice_id, OR: [{ gatewayEventId: null }, { gatewayEventId: { not: event.gatewayEventId } }] },
         data: { status: "paid", paidAt: new Date(event.paidAt), gatewayEventId: event.gatewayEventId },
       });
-      if (updated.count === 0 || !match.subscription_id) return; // already applied by this or a concurrent/prior delivery
+      if (updated.count === 0) {
+        console.log(`[webhook-pagbank] charge.paid tenant=${match.tenant_id} invoice=${match.invoice_id} — já aplicado antes (idempotência), ignorando`);
+        return; // already applied by this or a concurrent/prior delivery
+      }
+      if (!match.subscription_id) {
+        console.log(`[webhook-pagbank] charge.paid tenant=${match.tenant_id} invoice=${match.invoice_id} — fatura marcada paid, sem assinatura associada`);
+        return;
+      }
 
       await tx.subscription.updateMany({ where: { id: match.subscription_id }, data: { status: "active" } });
       await recordAudit(tx, { tenantId: match.tenant_id, userId: null, entityType: "invoice", entityId: match.invoice_id, action: "update", after: { status: "paid" } });
+      console.log(`[webhook-pagbank] charge.paid tenant=${match.tenant_id} invoice=${match.invoice_id} subscription=${match.subscription_id} — fatura paid, assinatura active`);
     }
 
     if (event.type === "charge.failed" && match.invoice_id) {
@@ -62,10 +78,18 @@ export async function processPagBankWebhook(rawBody: string, signatureHeader: st
         where: { id: match.invoice_id, status: { not: "failed" } },
         data: { status: "failed" },
       });
-      if (updated.count === 0 || !match.subscription_id) return;
+      if (updated.count === 0) {
+        console.log(`[webhook-pagbank] charge.failed tenant=${match.tenant_id} invoice=${match.invoice_id} — já aplicado antes (idempotência), ignorando`);
+        return;
+      }
+      if (!match.subscription_id) {
+        console.log(`[webhook-pagbank] charge.failed tenant=${match.tenant_id} invoice=${match.invoice_id} — fatura marcada failed, sem assinatura associada`);
+        return;
+      }
 
       await tx.subscription.updateMany({ where: { id: match.subscription_id }, data: { status: "past_due" } });
       await recordAudit(tx, { tenantId: match.tenant_id, userId: null, entityType: "invoice", entityId: match.invoice_id, action: "update", after: { status: "failed" } });
+      console.log(`[webhook-pagbank] charge.failed tenant=${match.tenant_id} invoice=${match.invoice_id} subscription=${match.subscription_id} — fatura failed, assinatura past_due`);
     }
 
     if (event.type === "subscription.canceled" && match.subscription_id) {
@@ -73,9 +97,13 @@ export async function processPagBankWebhook(rawBody: string, signatureHeader: st
         where: { id: match.subscription_id, status: { not: "canceled" } },
         data: { status: "canceled" },
       });
-      if (updated.count === 0) return;
+      if (updated.count === 0) {
+        console.log(`[webhook-pagbank] subscription.canceled tenant=${match.tenant_id} subscription=${match.subscription_id} — já aplicado antes (idempotência), ignorando`);
+        return;
+      }
 
       await recordAudit(tx, { tenantId: match.tenant_id, userId: null, entityType: "subscription", entityId: match.subscription_id, action: "update", after: { status: "canceled" } });
+      console.log(`[webhook-pagbank] subscription.canceled tenant=${match.tenant_id} subscription=${match.subscription_id} — assinatura canceled`);
     }
   });
 }
