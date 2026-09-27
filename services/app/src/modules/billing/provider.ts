@@ -12,6 +12,9 @@ export function getPaymentProvider(): PaymentProvider {
     apiKey: process.env.PAGBANK_API_KEY ?? "",
     baseUrl: process.env.PAGBANK_BASE_URL ?? "https://sandbox.api.pagseguro.com",
     webhookSecret: process.env.PAGBANK_WEBHOOK_SECRET ?? "",
+    // AUTH_URL já é a URL pública canônica do app (Auth.js exige https://<DOMAIN> em produção —
+    // ver .env.example) — reaproveitada aqui em vez de uma env var nova só para isso.
+    ...(process.env.AUTH_URL ? { webhookNotificationUrl: `${process.env.AUTH_URL}/api/webhooks/pagbank` } : {}),
   });
   cached = provider;
   return provider;

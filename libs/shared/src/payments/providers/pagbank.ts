@@ -41,6 +41,11 @@ interface PagBankConfig {
   baseUrl: string; // base da API de Pedidos (Orders), ex: https://sandbox.api.pagseguro.com
   webhookSecret: string; // account token usado na assinatura de autenticidade do webhook
   subscriptionsBaseUrl?: string; // base da API de Assinaturas; default derivado de baseUrl
+  // URL completa do endpoint que recebe o webhook (ex: https://usezolo.com.br/api/webhooks/pagbank)
+  // — registrada em `notification_urls` no corpo do pedido. Sem isso, o PagBank não tem para onde
+  // entregar o webhook (achado ao revisar createOneOffCharge: nenhum dos dois branches enviava
+  // esse campo, então nenhuma cobrança criada por este app jamais teria gerado um webhook real).
+  webhookNotificationUrl?: string;
 }
 
 function defaultSubscriptionsBaseUrl(ordersBaseUrl: string): string {
@@ -171,11 +176,14 @@ export class PagBankProvider implements PaymentProvider {
       email: input.customerEmail,
       tax_id: onlyDigits(input.customerTaxId),
     };
+    const notificationUrls = this.config.webhookNotificationUrl ? [this.config.webhookNotificationUrl] : undefined;
+
     if (input.method === "boleto") {
       const body = {
         reference_id: `tenant-${input.tenantId}-${Date.now()}`,
         customer,
         items: [{ reference_id: "assinatura-mensal", name: "Assinatura estoque-saas", quantity: 1, unit_amount: input.amountCents }],
+        notification_urls: notificationUrls,
         charges: [
           {
             reference_id: `charge-${input.tenantId}-${Date.now()}`,
@@ -204,6 +212,7 @@ export class PagBankProvider implements PaymentProvider {
       reference_id: `tenant-${input.tenantId}-${Date.now()}`,
       customer,
       items: [{ reference_id: "assinatura-mensal", name: "Assinatura estoque-saas", quantity: 1, unit_amount: input.amountCents }],
+      notification_urls: notificationUrls,
       qr_codes: [
         {
           amount: { value: input.amountCents },
