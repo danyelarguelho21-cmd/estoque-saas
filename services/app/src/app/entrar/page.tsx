@@ -88,11 +88,6 @@ function LoginForm() {
           Criar conta grátis
         </Link>
       </p>
-      <p className="mt-2 text-center text-xs text-[var(--color-muted)]">
-        <Link href="/admin/entrar" className="hover:underline">
-          Sou administrador da plataforma
-        </Link>
-      </p>
     </AuthShell>
   );
 }
