@@ -50,6 +50,12 @@ export async function POST(req: Request): Promise<Response> {
         );
         if (gatewayError.status === 401) {
           checkoutFailureMessage = "O serviço de pagamentos recusou a autenticação. Entre em contato com o suporte.";
+        } else if (gatewayError.status === 403) {
+          checkoutFailureMessage =
+            "O PagBank recusou o acesso à API de cobranças em produção. Solicite ao PagBank a habilitação da API de Pedidos (/orders) para Pix com QR Code dinâmico.";
+        } else if (gatewayError.status === 400 || gatewayError.status === 422) {
+          checkoutFailureMessage =
+            "O PagBank rejeitou os dados desta cobrança. Confira CNPJ/CPF e os dados da empresa; se estiverem corretos, contate o suporte.";
         }
       }
       if (!invoice?.pixQrCode) {
