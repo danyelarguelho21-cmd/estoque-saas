@@ -2,7 +2,7 @@
 // Fronteira: outros módulos e Route Handlers importam SOMENTE deste index.ts, nunca de arquivos
 // internos (ver ADR-001 — monolito modular).
 export { handlers, auth, signIn, signOut } from "./auth.config";
-export { requireSession, requireRole, type SessionContext } from "./rbac";
+export { requireSession, requireRole, isSubscriptionBlocked, type SessionContext } from "./rbac";
 export { signupTenant, type SignupInput, type SignupResult } from "./signup";
 export { inviteUser, type InviteUserInput, type InviteUserResult } from "./invite";
 export { hashPassword, verifyPassword } from "./password";

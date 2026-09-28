@@ -43,9 +43,25 @@ export class SignupPage {
   }
 
   /** Step 2: keeps the default "Pix ou boleto" payment method (no card tokenization dependency)
-   * and completes the subscription, landing on /painel. */
+   * and completes the subscription, landing on /painel (or /assinatura pre-payment — see BUG FIX
+   * below).
+   *
+   * BUG FIX (2026-09-28, found live re-running the e2e suite after adding the payment gate):
+   * `.click()` only awaits the click EVENT dispatching, not cadastro/page.tsx's own
+   * `await billingApi.createSubscription(...)` that follows it — callers that immediately
+   * simulate a webhook payment confirmation right after this resolved (tests/fixtures/
+   * simulate-payment.ts) raced against the checkout's own subscription.update() (which
+   * unconditionally sets status back to "pending_payment" — see modules/billing/subscriptions.ts).
+   * Whichever write landed last silently won, intermittently leaving the subscription
+   * "pending_payment" even after a real webhook had already confirmed payment. Waiting for the
+   * actual `POST /api/billing/subscription` response here — not just the click, not the
+   * resulting navigation — makes checkout's completion a real happens-before for every caller. */
   async submitStep2Pix() {
+    const checkoutResponse = this.page.waitForResponse(
+      (res) => res.url().includes("/api/billing/subscription") && res.request().method() === "POST",
+    );
     await this.page.getByRole("button", { name: "Concluir assinatura" }).click();
+    await checkoutResponse;
   }
 
   /** Convenience: the full two-step flow with sensible defaults (Pix/boleto, first plan). */

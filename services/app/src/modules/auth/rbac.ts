@@ -25,6 +25,15 @@ export interface RequireSessionOptions {
 // correção — nenhum código novo cria mais esse valor (ver signup.ts/subscriptions.ts).
 const BLOCKED_SUBSCRIPTION_STATUSES = new Set(["pending_payment", "trialing"]);
 
+// Compartilhado com proxy.ts (redirect de página pra /assinatura) — mesma fonte de verdade que a
+// checagem em requireSession usa pras rotas de API, pra nunca divergir sobre o que conta como
+// "bloqueado". `subscription` null (tenant sem NENHUMA assinatura — só acontece em fixtures de
+// teste, ver comentário em requireSession) não é bloqueado: fail-open deliberado.
+export async function isSubscriptionBlocked(tenantId: string): Promise<boolean> {
+  const subscription = await withTenant(tenantId, (tx) => tx.subscription.findFirst({ orderBy: { createdAt: "desc" } }));
+  return subscription !== null && BLOCKED_SUBSCRIPTION_STATUSES.has(subscription.status);
+}
+
 // Lança UnauthorizedError (401) se não houver sessão válida. Toda rota tenant-scoped chama isto
 // primeiro, antes de qualquer acesso a dados.
 export async function requireSession(options: RequireSessionOptions = {}): Promise<SessionContext> {
@@ -41,18 +50,15 @@ export async function requireSession(options: RequireSessionOptions = {}): Promi
     role: session.user.role,
   };
 
-  if (!options.allowPendingPayment) {
-    const subscription = await withTenant(ctx.tenantId, (tx) => tx.subscription.findFirst({ orderBy: { createdAt: "desc" } }));
-    // `subscription` só é null para tenants criados fora do fluxo real de signup (signupTenant
-    // SEMPRE cria uma subscription na mesma transação do tenant) — na prática, só fixtures de
-    // teste que seedam um tenant direto via SQL sem passar pelo onboarding real. Fail-open
-    // (permite acesso) nesse caso é deliberado: não há política de cobrança pra aplicar a um
-    // tenant que não tem NENHUMA assinatura, e travar isso exigiria dar uma subscription
-    // sintética a cada fixture de teste que hoje seeda um tenant sem uma (auditoria, RLS,
-    // stock-concurrency, etc.) só pra testar algo sem relação nenhuma com billing.
-    if (subscription && BLOCKED_SUBSCRIPTION_STATUSES.has(subscription.status)) {
-      throw new PaymentRequiredError("Assinatura pendente de pagamento — complete o pagamento para acessar o sistema.");
-    }
+  // `subscription` só é null para tenants criados fora do fluxo real de signup (signupTenant
+  // SEMPRE cria uma subscription na mesma transação do tenant) — na prática, só fixtures de teste
+  // que seedam um tenant direto via SQL sem passar pelo onboarding real. Fail-open (permite
+  // acesso) nesse caso é deliberado: não há política de cobrança pra aplicar a um tenant que não
+  // tem NENHUMA assinatura, e travar isso exigiria dar uma subscription sintética a cada fixture
+  // de teste que hoje seeda um tenant sem uma (auditoria, RLS, stock-concurrency, etc.) só pra
+  // testar algo sem relação nenhuma com billing.
+  if (!options.allowPendingPayment && (await isSubscriptionBlocked(ctx.tenantId))) {
+    throw new PaymentRequiredError("Assinatura pendente de pagamento — complete o pagamento para acessar o sistema.");
   }
 
   return ctx;

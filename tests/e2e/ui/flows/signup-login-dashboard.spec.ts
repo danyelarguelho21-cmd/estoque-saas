@@ -14,6 +14,7 @@ import { SignupPage } from "../pages/signup.page";
 import { LoginPage } from "../pages/login.page";
 import { DashboardPage } from "../pages/dashboard.page";
 import { generateValidCnpj } from "../../../fixtures/cnpj";
+import { findTenantIdByName, simulateFirstPixPaymentConfirmed } from "../../../fixtures/simulate-payment";
 
 function uniqueEmail() {
   return `qa-${Date.now()}-${Math.floor(Math.random() * 10000)}@example.com`;
@@ -28,6 +29,37 @@ test.describe("Signup -> Login -> Dashboard journey (Pattern 5)", () => {
     await expect(page).toHaveURL(/\/entrar/);
   });
 
+  // BUG FIX (2026-09-28, found live in production via manual test): a pending_payment tenant's
+  // page requests all passed the OLD middleware fine — only the underlying data API calls (402)
+  // were blocked. The page shell (header, nav) rendered normally with every widget silently
+  // failing underneath, indistinguishable from "it works" at a glance. proxy.ts now redirects
+  // /painel (and every other tenant-scoped page except /assinatura itself) straight to
+  // /assinatura for a pending_payment/trialing tenant, which already shows a clear
+  // "Aguardando primeiro pagamento" message (services/app/src/app/assinatura/page.tsx).
+  test("a tenant who hasn't paid yet is redirected from /painel straight to /assinatura with a clear message, not a silently-broken dashboard", async ({ page }) => {
+    const companyName = `Empresa Pagamento Pendente ${Date.now()}`;
+    const signup = new SignupPage(page);
+    await signup.goto();
+    await signup.completeSignup({
+      companyName,
+      cnpj: uniqueCnpj(),
+      adminName: "Admin QA",
+      adminEmail: uniqueEmail(),
+      password: "SenhaForte#123",
+    });
+
+    // completeSignup()'s own client-side router.push("/painel") already gets redirected here —
+    // assert the settled state, then also prove a FRESH direct navigation attempt is redirected
+    // too (not just the one immediately after checkout).
+    await expect(page).toHaveURL(/\/assinatura/);
+    await expect(page.getByText("Aguardando primeiro pagamento")).toBeVisible();
+
+    await page.goto("/painel");
+    await expect(page).toHaveURL(/\/assinatura/);
+    await page.goto("/produtos");
+    await expect(page).toHaveURL(/\/assinatura/);
+  });
+
   test("self-service signup creates the tenant + admin and lands the user on an authenticated dashboard showing the company name", async ({ page }) => {
     const companyName = `Empresa QA ${Date.now()}`;
     const email = uniqueEmail();
@@ -36,6 +68,14 @@ test.describe("Signup -> Login -> Dashboard journey (Pattern 5)", () => {
     const signup = new SignupPage(page);
     await signup.goto();
     await signup.completeSignup({ companyName, cnpj: uniqueCnpj(), adminName: "Admin QA", adminEmail: email, password });
+
+    // BUG FIX (2026-09-28): checkout alone no longer grants access — proxy.ts now redirects a
+    // pending_payment tenant's /painel visit to /assinatura instead (see rbac.ts's
+    // isSubscriptionBlocked). Simulate the PagBank webhook confirming the first payment, same as
+    // tests/fixtures/http-test-client.ts's signUpAndLogin does for integration tests, so this
+    // spec can keep testing what it's actually about (signup -> login -> a USABLE dashboard).
+    await simulateFirstPixPaymentConfirmed(await findTenantIdByName(companyName));
+    await page.goto("/painel");
 
     // The real end state that matters: NOT "a 201 was returned" but "the user is authenticated
     // and sees THEIR company's dashboard" — this is the boundary-safety Pattern 5 assertion.
@@ -63,6 +103,12 @@ test.describe("Signup -> Login -> Dashboard journey (Pattern 5)", () => {
     const signup = new SignupPage(page);
     await signup.goto();
     await signup.completeSignup({ companyName, cnpj: uniqueCnpj(), adminName: "Admin QA", adminEmail: email, password });
+
+    // BUG FIX (2026-09-28): see the previous test's comment — checkout alone no longer unblocks
+    // /painel, so this test's OWN concern (logout -> explicit login -> dashboard) needs a paid
+    // tenant to reach that point at all.
+    await simulateFirstPixPaymentConfirmed(await findTenantIdByName(companyName));
+    await page.goto("/painel");
 
     const dashboardAfterSignup = new DashboardPage(page);
     await dashboardAfterSignup.waitForLoad();

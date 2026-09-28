@@ -22,7 +22,7 @@
 //
 // Nota: proxy roda em runtime Node.js por padrão no Next 16 — não definir `export const runtime`
 // aqui (lançaria erro).
-import { auth } from "@/modules/auth";
+import { auth, isSubscriptionBlocked } from "@/modules/auth";
 import { NextResponse } from "next/server";
 
 const PUBLIC_API_PREFIXES = [
@@ -43,7 +43,16 @@ const TENANT_PROTECTED_PAGE_PREFIXES = [
   "/assinatura",
 ];
 
-export default auth((req) => {
+// BUG FIX (2026-09-28, found live in production via manual test): a pending_payment tenant's
+// page requests all passed this middleware fine (a valid session is a valid session) — only the
+// underlying API calls each page makes were blocked (402, via requireSession/requireRole,
+// modules/auth/rbac.ts). The PAGE SHELL (header, nav) rendered normally with every data widget
+// silently failing underneath, which is indistinguishable from "it works" at a glance. Redirect
+// to /assinatura here instead, same as the existing unauthenticated -> /entrar redirect below —
+// consistent with how this middleware already handles "you can't be here."
+const PAYMENT_EXEMPT_PAGE_PREFIXES = ["/assinatura"]; // must stay reachable to actually pay
+
+export default auth(async (req) => {
   const { pathname } = req.nextUrl;
 
   // 1) API routes — 401 JSON, nunca redirect (o cliente é código, não um navegador com usuário).
@@ -75,10 +84,17 @@ export default auth((req) => {
 
   // 3) Páginas de tenant — redireciona para login preservando destino.
   const isProtectedPage = TENANT_PROTECTED_PAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
-  if (isProtectedPage && !req.auth) {
-    const loginUrl = new URL("/entrar", req.url);
-    loginUrl.searchParams.set("callbackUrl", pathname + req.nextUrl.search);
-    return NextResponse.redirect(loginUrl);
+  if (isProtectedPage) {
+    if (!req.auth) {
+      const loginUrl = new URL("/entrar", req.url);
+      loginUrl.searchParams.set("callbackUrl", pathname + req.nextUrl.search);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    const isPaymentExempt = PAYMENT_EXEMPT_PAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+    if (!isPaymentExempt && req.auth.user?.tenantId && (await isSubscriptionBlocked(req.auth.user.tenantId))) {
+      return NextResponse.redirect(new URL("/assinatura", req.url));
+    }
   }
 
   return NextResponse.next();

@@ -28,15 +28,17 @@ test("finishing a sale redirects to the REAL sale's detail page, not /vendas/und
     adminEmail: email,
     password: "SenhaForte#123",
   });
-  await new DashboardPage(page).waitForLoad();
-
   // BUG FIX (2026-09-28): signup no longer grants full product access before the first payment
-  // is confirmed (this product has no trial period — see modules/auth/rbac.ts). Simulate the
-  // PagBank webhook confirming it, same as tests/fixtures/http-test-client.ts's signUpAndLogin
-  // does for integration tests, so this spec can keep exercising the actual bug under test
-  // (the sale-creation redirect) instead of the unrelated payment gate.
+  // is confirmed — this product has no trial period (see modules/auth/rbac.ts). proxy.ts now
+  // redirects every protected page (including /painel itself) to /assinatura until then, so the
+  // payment simulation has to happen BEFORE trying to reach the dashboard, not after. Simulate
+  // the PagBank webhook confirming it, same as tests/fixtures/http-test-client.ts's
+  // signUpAndLogin does for integration tests, so this spec can keep exercising the actual bug
+  // under test (the sale-creation redirect) instead of the unrelated payment gate.
   const tenantId = await findTenantIdByName(companyName);
   await simulateFirstPixPaymentConfirmed(tenantId);
+  await page.goto("/painel");
+  await new DashboardPage(page).waitForLoad();
 
   // Reuse the default store created during signup; the Basic plan allows one store.
   await page.goto("/configuracoes/lojas");
