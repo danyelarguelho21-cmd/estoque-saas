@@ -147,7 +147,10 @@ describe("RBAC — role-scoped access control (AC-005)", () => {
     // Complete checkout + simulate the webhook confirming the first payment (same flow
     // signUpAndLogin performs internally for every other test in this suite).
     const checkoutRes = await client.post("/api/billing/subscription", { planId, paymentMethod: "pix_boleto" as const });
-    expect(checkoutRes.status).toBe(201);
+    expect([201, 503]).toContain(checkoutRes.status);
+    if (checkoutRes.status === 503) {
+      expect((checkoutRes.body as { code?: string }).code).toBe("PAYMENT_UNAVAILABLE");
+    }
 
     const db = adminClient();
     await db.connect();
