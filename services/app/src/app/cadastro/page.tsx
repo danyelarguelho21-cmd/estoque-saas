@@ -122,7 +122,10 @@ function SignupPageInner() {
         const checkout = await billingApi.createSubscription({ planId: selectedPlanId, paymentMethod: "card", cardToken });
         router.push(checkout.subscription.status === "active" ? "/painel" : "/assinatura");
       } else {
-        await billingApi.createSubscription({ planId: selectedPlanId, paymentMethod: "pix_boleto" });
+        const checkout = await billingApi.createSubscription({ planId: selectedPlanId, paymentMethod: "pix_boleto" });
+        if (!checkout.invoice?.pixQrCode) {
+          throw new Error("A cobrança foi solicitada, mas o PagBank não retornou o código Pix. Entre em Assinatura e tente novamente.");
+        }
         router.push("/assinatura");
       }
     } catch (err) {
@@ -132,6 +135,10 @@ function SignupPageInner() {
         );
       } else if (err instanceof ApiError && err.status === 402) {
         setError("Pagamento recusado pela operadora. Verifique os dados do cartão ou escolha Pix/Boleto.");
+      } else if (err instanceof ApiError) {
+        setError(err.message);
+      } else if (err instanceof Error) {
+        setError(err.message);
       } else {
         setError("Não foi possível concluir a assinatura agora. Tente novamente.");
       }

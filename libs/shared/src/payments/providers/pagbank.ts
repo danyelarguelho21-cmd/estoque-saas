@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { isIP } from "node:net";
 import type {
   OneOffChargeInput,
   OneOffChargeResult,
@@ -52,6 +53,31 @@ function defaultSubscriptionsBaseUrl(ordersBaseUrl: string): string {
   return ordersBaseUrl.includes("sandbox")
     ? "https://sandbox.api.assinaturas.pagseguro.com"
     : "https://api.assinaturas.pagseguro.com";
+}
+
+function getPublicWebhookUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    // PagBank precisa alcançar o webhook pela internet. URLs HTTP de desenvolvimento, loopback,
+    // IPs privados e nomes locais são inválidos e fazem a criação do pedido retornar 400.
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local") ||
+      hostname.endsWith(".test") ||
+      isIP(hostname) !== 0
+    ) {
+      return undefined;
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 // BUG FIX (found live via a real sandbox call — confirmed against PagBank's actual error
@@ -177,7 +203,8 @@ export class PagBankProvider implements PaymentProvider {
       email: input.customerEmail,
       tax_id: onlyDigits(input.customerTaxId),
     };
-    const notificationUrls = this.config.webhookNotificationUrl ? [this.config.webhookNotificationUrl] : undefined;
+    const webhookUrl = getPublicWebhookUrl(this.config.webhookNotificationUrl);
+    const notificationUrls = webhookUrl ? [webhookUrl] : undefined;
 
     if (input.method === "boleto") {
       const body = {

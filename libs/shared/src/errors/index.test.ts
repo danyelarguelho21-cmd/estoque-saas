@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ConflictError,
   NotFoundError,
+  PaymentUnavailableError,
   PlanLimitReachedError,
   RateLimitedError,
   ValidationError,
@@ -44,6 +45,13 @@ describe("toErrorResponse", () => {
     const { status, body } = toErrorResponse(new RateLimitedError(), "t-6");
     expect(status).toBe(429);
     expect(body.code).toBe("RATE_LIMITED");
+  });
+
+  it("maps PaymentUnavailableError to 503 without hiding the retryable message", () => {
+    const { status, body } = toErrorResponse(new PaymentUnavailableError(), "t-payment");
+    expect(status).toBe(503);
+    expect(body.code).toBe("PAYMENT_UNAVAILABLE");
+    expect(body.message).toContain("gerar a cobrança Pix");
   });
 
   it("always includes the trace_id passed in", () => {

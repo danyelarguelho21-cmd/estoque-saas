@@ -63,13 +63,16 @@ export default function SubscriptionPage() {
     setRetryingCheckout(true);
     setCheckoutError(null);
     try {
-      await billingApi.createSubscription({ planId, paymentMethod: "pix_boleto" });
+      const checkout = await billingApi.createSubscription({ planId, paymentMethod: "pix_boleto" });
+      if (!checkout.invoice?.pixQrCode) {
+        throw new Error("A cobrança foi solicitada, mas o PagBank não retornou o código Pix. Tente novamente em instantes.");
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["subscription"] }),
         queryClient.invalidateQueries({ queryKey: ["invoices"] }),
       ]);
-    } catch {
-      setCheckoutError("Não foi possível gerar a cobrança Pix. Aguarde um instante e tente novamente.");
+    } catch (err) {
+      setCheckoutError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Não foi possível gerar a cobrança Pix. Tente novamente.");
     } finally {
       setRetryingCheckout(false);
     }

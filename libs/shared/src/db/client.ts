@@ -1,5 +1,13 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 
+// A aplicação usa URLs PostgreSQL diretas (DATABASE_URL/APP_DATABASE_URL), sem Accelerate nem
+// Driver Adapter. Em runtimes Next/Webpack, Prisma 6 pode inferir engineType=client e então
+// rejeitar postgresql:// como se exigisse prisma://; fixe o engine nativo antes de instanciar os
+// clientes para manter o mesmo comportamento do worker e dos scripts Node.
+if (!process.env.PRISMA_CLIENT_ENGINE_TYPE) {
+  process.env.PRISMA_CLIENT_ENGINE_TYPE = "library";
+}
+
 // Cliente Prisma com contexto de tenant via RLS (ADR-002).
 // withTenant() abre uma transação, seta app.tenant_id (escopo de transação via set_config(..., true)),
 // executa o callback, e comita/rollback — toda query dentro do callback é automaticamente

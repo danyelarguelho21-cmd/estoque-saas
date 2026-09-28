@@ -44,6 +44,11 @@ paths:
                   description: "Token de cartão tokenizado no client-side (PagBank.js) — obrigatório se paymentMethod=card"
       responses:
         "201": { description: Assinatura criada }
+        "503":
+          description: PagBank indisponível ou cobrança Pix sem QR Code retornado; assinatura permanece pendente e pode ser tentada novamente
+          content:
+            application/json:
+              schema: { $ref: "_common.yaml#/components/schemas/Error" }
         "402":
           description: Pagamento recusado
           content:

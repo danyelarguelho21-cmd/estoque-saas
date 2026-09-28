@@ -1,11 +1,78 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PagBankProvider } from "./pagbank";
 
 const provider = new PagBankProvider({
   apiKey: "test-key",
   baseUrl: "https://sandbox.api.pagseguro.com",
   webhookSecret: "account-token-123",
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("PagBankProvider.createOneOffCharge webhook URL", () => {
+  it("omits a localhost webhook URL so local Pix orders can be created", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "ORDE_1", charges: [{ id: "CHAR_1", qr_code: { text: "pix-copy-code" } }] }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const localProvider = new PagBankProvider({
+      apiKey: "test-key",
+      baseUrl: "https://sandbox.api.pagseguro.com",
+      webhookSecret: "account-token-123",
+      webhookNotificationUrl: "http://localhost:3000/api/webhooks/pagbank",
+    });
+
+    const charge = await localProvider.createOneOffCharge({
+      tenantId: "tenant-1",
+      idempotencyKey: "idempotency-1",
+      amountCents: 14990,
+      dueDate: "2026-10-01",
+      method: "pix",
+      customerEmail: "test@example.com",
+      customerName: "Test Company",
+      customerTaxId: "12345678909",
+    });
+
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    expect(requestBody).not.toHaveProperty("notification_urls");
+    expect(charge.pixQrCode).toBe("pix-copy-code");
+  });
+
+  it("keeps a public HTTPS webhook URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "ORDE_2", charges: [{ id: "CHAR_2", qr_code: { text: "pix-copy-code" } }] }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const publicProvider = new PagBankProvider({
+      apiKey: "test-key",
+      baseUrl: "https://sandbox.api.pagseguro.com",
+      webhookSecret: "account-token-123",
+      webhookNotificationUrl: "https://estoque.example.com/api/webhooks/pagbank",
+    });
+
+    await publicProvider.createOneOffCharge({
+      tenantId: "tenant-1",
+      idempotencyKey: "idempotency-2",
+      amountCents: 14990,
+      dueDate: "2026-10-01",
+      method: "pix",
+      customerEmail: "test@example.com",
+      customerName: "Test Company",
+      customerTaxId: "12345678909",
+    });
+
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    expect(requestBody.notification_urls).toEqual(["https://estoque.example.com/api/webhooks/pagbank"]);
+  });
 });
 
 describe("PagBankProvider.verifyWebhookSignature", () => {

@@ -12,6 +12,7 @@ export type ErrorCode =
   | "PLAN_LIMIT_REACHED"
   | "PAYMENT_REQUIRED"
   | "RATE_LIMITED"
+  | "PAYMENT_UNAVAILABLE"
   | "INTERNAL_ERROR";
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
@@ -23,6 +24,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   PLAN_LIMIT_REACHED: 409,
   PAYMENT_REQUIRED: 402,
   RATE_LIMITED: 429,
+  PAYMENT_UNAVAILABLE: 503,
   INTERNAL_ERROR: 500,
 };
 
@@ -93,6 +95,13 @@ export class RateLimitedError extends AppError {
   constructor(message = "Muitas tentativas. Tente novamente mais tarde.", details?: Record<string, unknown>) {
     super("RATE_LIMITED", message, details);
     this.name = "RateLimitedError";
+  }
+}
+
+export class PaymentUnavailableError extends AppError {
+  constructor(message = "Não foi possível gerar a cobrança Pix agora. Tente novamente em instantes.") {
+    super("PAYMENT_UNAVAILABLE", message);
+    this.name = "PaymentUnavailableError";
   }
 }
 
