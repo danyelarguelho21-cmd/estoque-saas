@@ -18,14 +18,16 @@ const monthlyChargeQueue = new Queue<GenerateMonthlyChargeJobData>(QUEUE_NAMES.g
 
 export async function GET(): Promise<Response> {
   return handleRoute(async () => {
-    const ctx = await requireRole("billing:manage");
+    // allowPendingPayment: ver comentário em rbac.ts — esta rota É o checkout, tem que continuar
+    // acessível antes do primeiro pagamento.
+    const ctx = await requireRole("billing:manage", { allowPendingPayment: true });
     return ok(await getSubscription(ctx.tenantId));
   });
 }
 
 export async function POST(req: Request): Promise<Response> {
   return handleRoute(async () => {
-    const ctx = await requireRole("billing:manage");
+    const ctx = await requireRole("billing:manage", { allowPendingPayment: true });
     const input = await parseJsonBody(req, CreateSubscriptionSchema);
     const result = await createSubscription(ctx.tenantId, input);
 

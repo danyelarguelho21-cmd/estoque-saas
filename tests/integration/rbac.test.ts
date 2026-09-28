@@ -7,8 +7,11 @@
 // operador/vendedor cannot be logged in via the public HTTP contract alone yet. This suite seeds
 // operador/vendedor users directly via SQL (bcrypt, matching the Auth.js Credentials standard)
 // as a pragmatic workaround — see tests/fixtures/db-test-helpers.ts `seedUser`.
+import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
+import { generateValidCnpj } from "../fixtures/cnpj";
 import { adminClient, randomSuffix, resetTestDatabase, seedPlan, seedStore, seedTenant, seedUser } from "../fixtures/db-test-helpers";
+import { makeAuthenticityToken, makeRawChargePaidPayload } from "../fixtures/factories/pagbank-webhook.factory";
 import { ApiClient, signUpAndLogin } from "../fixtures/http-test-client";
 
 async function loginAs(email: string, password: string) {
@@ -106,6 +109,72 @@ describe("RBAC — role-scoped access control (AC-005)", () => {
     const anon = new ApiClient();
     const res = await anon.get("/api/products");
     expect(res.status).toBe(401);
+  });
+
+  // BUG FIX (2026-09-28, found live in production via manual test): a freshly signed-up tenant
+  // got full product access ("Ativa") with zero payment — subscriptions were born
+  // "trialing"/"active" and no guard checked payment state at all. This product has no trial
+  // period (BRD: pagar pra usar). requireSession/requireRole (modules/auth/rbac.ts) now block
+  // every tenant-scoped route except billing/tenant-read while status is pending_payment/trialing.
+  it("a freshly signed-up tenant with no payment yet is blocked (402) from product access — no free trial — and gets access right after the first payment is confirmed", async () => {
+    const client = new ApiClient();
+    const email = `pending-${randomSuffix()}@example.com`;
+    const password = "SenhaForte#123";
+    const signupRes = await client.post<{ tenantId: string }>("/api/auth/signup", {
+      personType: "PJ" as const,
+      companyName: "Empresa Pagamento Pendente",
+      cnpj: generateValidCnpj(),
+      adminName: "Admin Pendente",
+      adminEmail: email,
+      password,
+      planId,
+    });
+    expect(signupRes.status).toBe(201);
+    const loginRes = await client.post("/api/auth/login", { email, password });
+    expect(loginRes.status).toBe(200);
+
+    // Blocked pre-payment — this is the exact bug reported live: full access without paying.
+    const blockedRes = await client.get<{ code: string }>("/api/products");
+    expect(blockedRes.status).toBe(402);
+    expect(blockedRes.body.code).toBe("PAYMENT_REQUIRED");
+
+    // Billing/tenant stay reachable — otherwise the tenant could never pay to unblock itself.
+    const billingRes = await client.get("/api/billing/subscription");
+    expect(billingRes.status).toBe(200);
+    const tenantRes = await client.get("/api/tenant");
+    expect(tenantRes.status).toBe(200);
+
+    // Complete checkout + simulate the webhook confirming the first payment (same flow
+    // signUpAndLogin performs internally for every other test in this suite).
+    const checkoutRes = await client.post("/api/billing/subscription", { planId, paymentMethod: "pix_boleto" as const });
+    expect(checkoutRes.status).toBe(201);
+
+    const db = adminClient();
+    await db.connect();
+    try {
+      const { rows } = await db.query<{ id: string }>(
+        `SELECT id FROM subscriptions WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [signupRes.body.tenantId],
+      );
+      const subscriptionId = rows[0]!.id;
+      const chargeId = `chg_pending_test_${randomSuffix()}`;
+      await db.query(
+        `INSERT INTO invoices (id, tenant_id, subscription_id, amount_cents, status, due_date, payment_method, gateway_charge_id)
+         VALUES ($1, $2, $3, 9900, 'pending', CURRENT_DATE, 'pix', $4)`,
+        [randomUUID(), signupRes.body.tenantId, subscriptionId, chargeId],
+      );
+      const payload = makeRawChargePaidPayload({ chargeId });
+      const rawBody = JSON.stringify(payload);
+      const signature = makeAuthenticityToken(rawBody, process.env.PAGBANK_WEBHOOK_SECRET ?? "dev-placeholder");
+      const webhookRes = await new ApiClient().post("/api/webhooks/pagbank", payload, { "x-authenticity-token": signature });
+      expect(webhookRes.status).toBe(200);
+    } finally {
+      await db.end();
+    }
+
+    // Unblocked immediately after payment confirmation — no re-login needed.
+    const unlockedRes = await client.get("/api/products");
+    expect(unlockedRes.status).toBe(200);
   });
 
   it("cross-tenant access is a 404, never a 403 (RLS must not leak existence of another tenant's resource — _common.yaml NotFound contract)", async () => {

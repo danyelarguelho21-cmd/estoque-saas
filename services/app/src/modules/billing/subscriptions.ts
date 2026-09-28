@@ -68,7 +68,11 @@ export async function createSubscription(tenantId: string, input: CreateSubscrip
         where: { id: current.id },
         data: {
           planId: plan.id,
-          status: result.status === "active" ? "active" : "trialing",
+          // "active" só quando o gateway confirma a cobrança síncrona do cartão de verdade
+          // (result.status já teria lançado PaymentRequiredError acima se "failed") —
+          // "pending_payment", não "active"/"trialing", no caso contrário (sem período de teste,
+          // ver rbac.ts).
+          status: result.status === "active" ? "active" : "pending_payment",
           paymentMethod: "card",
           gatewaySubscriptionId: result.gatewaySubscriptionId,
           gatewayCustomerId: result.gatewayCustomerId,
@@ -87,15 +91,23 @@ export async function createSubscription(tenantId: string, input: CreateSubscrip
     // pix_boleto subscription permanently NOT due until a month had passed — the very act of
     // choosing pix/boleto at checkout disabled the "primeiro ciclo gerado automaticamente" promise
     // (cadastro/page.tsx) for 30 days, so "Assinatura → Faturas" stayed empty indefinitely.
-    // Leaving both fields untouched here (they're already null from signup.ts's initial trialing
-    // row) keeps this subscription "due" so the immediate job enqueued below (and the daily
-    // generate-monthly-charge cron as a backstop) actually generates the first invoice.
+    // Leaving both fields untouched here (they're already null from signup.ts's initial
+    // pending_payment row) keeps this subscription "due" so the immediate job enqueued below (and
+    // the daily generate-monthly-charge cron as a backstop) actually generates the first invoice.
     // generateChargeForTenant() is what correctly sets these fields once a charge is generated.
+    //
+    // BUG FIX #2 (found live via manual test in production, 2026-09-28): status virava "active"
+    // AQUI, antes de qualquer pagamento real — uma sessão válida já bastava pra acesso pleno ao
+    // painel (Produtos/Estoque/Vendas), sem nenhuma fatura paga. Este produto não tem período de
+    // teste (BRD: pagar pra usar). Mantém "pending_payment" — só o webhook do PagBank
+    // (modules/billing/webhook.ts, evento charge.paid) promove pra "active", quando o pagamento é
+    // de fato confirmado. requireSession/requireRole (modules/auth/rbac.ts) bloqueiam acesso
+    // pleno enquanto o status for pending_payment/trialing.
     const updated = await tx.subscription.update({
       where: { id: current.id },
       data: {
         planId: plan.id,
-        status: "active",
+        status: "pending_payment",
         paymentMethod: "pix_boleto",
       },
     });

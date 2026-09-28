@@ -124,7 +124,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         planId: { type: string, format: uuid }
-        status: { type: string, enum: [trialing, active, past_due, canceled] }
+        status: { type: string, enum: [pending_payment, trialing, active, past_due, canceled] }
         paymentMethod: { type: string, enum: [card, pix_boleto] }
         currentPeriodStart: { type: string, format: date-time }
         currentPeriodEnd: { type: string, format: date-time }

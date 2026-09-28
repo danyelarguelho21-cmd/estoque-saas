@@ -18,21 +18,31 @@ import { makeNfeXml, makeNfeItem } from "../../../fixtures/factories/nfe.factory
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { generateValidCnpj } from "../../../fixtures/cnpj";
+import { findTenantIdByName, simulateFirstPixPaymentConfirmed } from "../../../fixtures/simulate-payment";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 test("operator uploads NF-e XML, reviews matched items, and confirming updates the stock balance shown in the UI", async ({ page }) => {
   const email = `qa-nfe-${Date.now()}@example.com`;
+  const companyName = `Empresa NFe ${Date.now()}`;
   const signup = new SignupPage(page);
   await signup.goto();
   await signup.completeSignup({
-    companyName: `Empresa NFe ${Date.now()}`,
+    companyName,
     cnpj: generateValidCnpj(),
     adminName: "Admin QA",
     adminEmail: email,
     password: "SenhaForte#123",
   });
   await new DashboardPage(page).waitForLoad();
+
+  // BUG FIX (2026-09-28): signup no longer grants full product access before the first payment
+  // is confirmed (this product has no trial period — see modules/auth/rbac.ts). Simulate the
+  // PagBank webhook confirming it, same as tests/fixtures/http-test-client.ts's signUpAndLogin
+  // does for integration tests, so this spec can keep exercising the actual bug under test (the
+  // NF-e import journey) instead of the unrelated payment gate.
+  const tenantId = await findTenantIdByName(companyName);
+  await simulateFirstPixPaymentConfirmed(tenantId);
 
   // Verify and reuse the default store created during signup; the Basic plan allows one store.
   await page.goto("/configuracoes/lojas");

@@ -46,7 +46,10 @@ async function generateChargeForTenant(tenantId: string): Promise<boolean> {
 
     const subscription = await tx.subscription.findFirst({ orderBy: { createdAt: "desc" } });
     if (!subscription || subscription.paymentMethod !== "pix_boleto") return false;
-    if (subscription.status !== "active" && subscription.status !== "trialing") return false;
+    // "pending_payment" (estado inicial, sem período de teste — ver rbac.ts) precisa continuar
+    // gerando a primeira cobrança normalmente; "trialing" mantido só por linhas antigas no banco.
+    const BILLABLE_STATUSES = new Set(["active", "trialing", "pending_payment"]);
+    if (!BILLABLE_STATUSES.has(subscription.status)) return false;
 
     const due = !subscription.currentPeriodEnd || subscription.currentPeriodEnd <= new Date();
     if (!due) return false;

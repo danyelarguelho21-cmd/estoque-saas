@@ -81,7 +81,10 @@ CREATE TABLE subscriptions (
     id                          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id                   uuid NOT NULL REFERENCES tenants(id),
     plan_id                     uuid NOT NULL REFERENCES plans(id),
-    status                      text NOT NULL CHECK (status IN ('trialing','active','past_due','canceled')),
+    -- "pending_payment" (BUG FIX 2026-09-28, modules/auth/rbac.ts): estado inicial real hoje —
+    -- este produto não tem período de teste (BRD: pagar pra usar). "trialing" mantido só por
+    -- compatibilidade com linhas já existentes; nenhum código novo cria mais esse valor.
+    status                      text NOT NULL CHECK (status IN ('pending_payment','trialing','active','past_due','canceled')),
     payment_method              text NOT NULL CHECK (payment_method IN ('card','pix_boleto')),
     gateway_customer_id         text,
     gateway_subscription_id     text,

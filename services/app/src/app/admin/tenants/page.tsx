@@ -19,6 +19,7 @@ import type { SubscriptionStatus, TenantAdminSummary } from "@/lib/api/types";
 
 const STATUS_OPTIONS = [
   { value: "__all__", label: "Todos os status" },
+  { value: "pending_payment", label: "Pagamento pendente" },
   { value: "trialing", label: "Teste" },
   { value: "active", label: "Ativa" },
   { value: "past_due", label: "Inadimplente" },
@@ -26,6 +27,7 @@ const STATUS_OPTIONS = [
 ];
 
 const STATUS_BADGE: Record<SubscriptionStatus, "success" | "danger" | "neutral" | "info"> = {
+  pending_payment: "info",
   trialing: "info",
   active: "success",
   past_due: "danger",

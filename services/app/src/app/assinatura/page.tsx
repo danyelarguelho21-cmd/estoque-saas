@@ -19,6 +19,7 @@ import { ApiError } from "@/lib/api/client";
 import { formatCentsToBRL, formatDateBR } from "@/lib/format";
 
 const SUBSCRIPTION_STATUS_LABEL: Record<string, string> = {
+  pending_payment: "Pagamento pendente",
   trialing: "Período de teste",
   active: "Ativa",
   past_due: "Inadimplente",
@@ -100,6 +101,11 @@ export default function SubscriptionPage() {
                   {subscriptionQuery.data.status === "past_due" && (
                     <Alert variant="danger" title="Pagamento pendente">
                       Regularize sua fatura para evitar restrição de acesso.
+                    </Alert>
+                  )}
+                  {(subscriptionQuery.data.status === "pending_payment" || subscriptionQuery.data.status === "trialing") && (
+                    <Alert variant="warning" title="Aguardando primeiro pagamento">
+                      Pague a fatura abaixo para liberar o acesso completo ao sistema.
                     </Alert>
                   )}
                 </div>

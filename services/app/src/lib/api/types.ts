@@ -301,7 +301,10 @@ export interface Plan {
   features?: Record<string, unknown>;
 }
 
-export type SubscriptionStatus = "trialing" | "active" | "past_due" | "canceled";
+// "trialing" mantido só por compatibilidade com linhas já existentes no banco criadas antes da
+// correção do bug de acesso pleno sem pagamento (rbac.ts) — nenhum código novo cria mais esse
+// valor; "pending_payment" é o estado inicial real hoje (sem período de teste, BRD: pagar pra usar).
+export type SubscriptionStatus = "pending_payment" | "trialing" | "active" | "past_due" | "canceled";
 export type PaymentMethod = "card" | "pix_boleto";
 
 export interface Subscription {

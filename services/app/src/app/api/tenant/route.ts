@@ -9,7 +9,9 @@ const UpdateSchema = z.object({
 
 export async function GET(): Promise<Response> {
   return handleRoute(async () => {
-    const ctx = await requireSession();
+    // allowPendingPayment: a tela de Assinatura (que mostra nome/dados do tenant) precisa
+    // continuar acessível mesmo antes do primeiro pagamento — ver rbac.ts.
+    const ctx = await requireSession({ allowPendingPayment: true });
     return ok(await getTenant(ctx.tenantId));
   });
 }

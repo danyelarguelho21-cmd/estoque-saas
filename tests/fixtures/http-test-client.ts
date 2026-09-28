@@ -7,7 +7,10 @@
 // Requires the app to be running — see tests/integration/docker-compose.test.yml and
 // tests/integration/setup.ts. If TEST_BASE_URL is unreachable, tests fail loudly (not skipped).
 
+import { randomUUID } from "node:crypto";
 import { generateValidCnpj } from "./cnpj";
+import { adminClient } from "./db-test-helpers";
+import { makeAuthenticityToken, makeRawChargePaidPayload } from "./factories/pagbank-webhook.factory";
 
 const BASE_URL = process.env.TEST_BASE_URL ?? "http://localhost:3100";
 
@@ -124,10 +127,21 @@ export class ApiClient {
   }
 }
 
-/** Signs up a fresh tenant + admin via the real /api/auth/signup contract and logs in,
- * returning an authenticated ApiClient. Used by every integration/e2e-api test that needs a
- * ready-to-use tenant instead of re-deriving one from raw SQL (keeps tests close to the
- * real onboarding contract per BRD Epic 1). */
+/** Signs up a fresh tenant + admin via the real /api/auth/signup contract, logs in, completes
+ * pix/boleto checkout, and simulates the PagBank webhook confirming the first payment —
+ * returning an authenticated ApiClient for a genuinely ACTIVE (paid) tenant. Used by every
+ * integration/e2e-api test that needs a ready-to-use tenant instead of re-deriving one from raw
+ * SQL (keeps tests close to the real onboarding contract per BRD Epic 1).
+ *
+ * BUG FIX (2026-09-28, production): signup used to grant full product access immediately
+ * (subscription born "trialing"/"active" with no payment) — this product has no trial period
+ * (BRD: pagar pra usar), so requireSession/requireRole (modules/auth/rbac.ts) now block a
+ * pending_payment tenant from every route except billing/tenant-read. Every EXISTING test that
+ * calls this helper expects a tenant that can actually use products/stock/sales/etc., so this
+ * helper completes the real checkout -> webhook flow itself (the same one a real paying customer
+ * goes through) rather than reaching around it — keeping the fixture's promise ("close to the
+ * real onboarding contract") true post-fix. Tests that specifically need a pending_payment tenant
+ * (the gate itself) build one manually instead — see tests/integration/rbac.test.ts. */
 export async function signUpAndLogin(
   planId: string,
   overrides: Partial<{ companyName: string; cnpj: string; adminName: string; adminEmail: string; password: string }> = {},
@@ -151,11 +165,44 @@ export async function signUpAndLogin(
   if (loginRes.status !== 200) {
     throw new Error(`login failed: ${loginRes.status} ${JSON.stringify(loginRes.body)}`);
   }
-  return {
-    client,
-    tenantId: signupRes.body.tenantId,
-    userId: signupRes.body.userId,
-    email,
-    password,
-  };
+  const { tenantId, userId } = signupRes.body;
+
+  // billing:manage routes allow pending_payment (see rbac.ts) so this call works pre-payment.
+  const checkoutRes = await client.post("/api/billing/subscription", { planId, paymentMethod: "pix_boleto" as const });
+  if (checkoutRes.status !== 201) {
+    throw new Error(`checkout failed: ${checkoutRes.status} ${JSON.stringify(checkoutRes.body)}`);
+  }
+
+  // POST /api/billing/subscription doesn't itself create an invoice (that's generate-monthly-charge,
+  // out of HTTP-testable scope — same reasoning as webhook-idempotency.test.ts) — seed one directly,
+  // exactly the shape that job would produce, so the simulated webhook below has something real to match.
+  const db = adminClient();
+  await db.connect();
+  try {
+    const { rows } = await db.query<{ id: string }>(
+      `SELECT id FROM subscriptions WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [tenantId],
+    );
+    const subscriptionId = rows[0]?.id;
+    if (!subscriptionId) throw new Error(`no subscription found for tenant ${tenantId} after checkout`);
+
+    const chargeId = `chg_fixture_${randomUUID().slice(0, 8)}`;
+    await db.query(
+      `INSERT INTO invoices (id, tenant_id, subscription_id, amount_cents, status, due_date, payment_method, gateway_charge_id)
+       VALUES ($1, $2, $3, 9900, 'pending', CURRENT_DATE, 'pix', $4)`,
+      [randomUUID(), tenantId, subscriptionId, chargeId],
+    );
+
+    const payload = makeRawChargePaidPayload({ chargeId });
+    const rawBody = JSON.stringify(payload);
+    const signature = makeAuthenticityToken(rawBody, process.env.PAGBANK_WEBHOOK_SECRET ?? "dev-placeholder");
+    const webhookRes = await new ApiClient().post("/api/webhooks/pagbank", payload, { "x-authenticity-token": signature });
+    if (webhookRes.status !== 200) {
+      throw new Error(`webhook payment simulation failed: ${webhookRes.status} ${JSON.stringify(webhookRes.body)}`);
+    }
+  } finally {
+    await db.end();
+  }
+
+  return { client, tenantId, userId, email, password };
 }

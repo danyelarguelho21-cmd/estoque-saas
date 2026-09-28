@@ -33,7 +33,7 @@ paths:
         - $ref: "_common.yaml#/components/parameters/LimitParam"
         - name: subscriptionStatus
           in: query
-          schema: { type: string, enum: [trialing, active, past_due, canceled] }
+          schema: { type: string, enum: [pending_payment, trialing, active, past_due, canceled] }
       responses:
         "200":
           description: OK
@@ -97,6 +97,6 @@ components:
         name: { type: string }
         cnpj: { type: string }
         planName: { type: string }
-        subscriptionStatus: { type: string, enum: [trialing, active, past_due, canceled] }
+        subscriptionStatus: { type: string, enum: [pending_payment, trialing, active, past_due, canceled] }
         status: { type: string, enum: [active, suspended, canceled] }
         createdAt: { type: string, format: date-time }

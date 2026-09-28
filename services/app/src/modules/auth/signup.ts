@@ -66,11 +66,14 @@ export async function signupTenant(input: SignupInput): Promise<SignupResult> {
           type: "loja",
         },
       });
+      // BUG FIX (achado em produção via teste manual real): este produto não tem período de
+      // teste (BRD: pagar pra usar) — "pending_payment" bloqueia acesso pleno até o webhook do
+      // PagBank confirmar o primeiro pagamento (ver rbac.ts's requireSession/requireRole).
       await tx.subscription.create({
         data: {
           tenantId,
           planId: input.planId,
-          status: "trialing",
+          status: "pending_payment",
           paymentMethod: "pix_boleto",
         },
       });

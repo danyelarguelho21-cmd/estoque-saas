@@ -87,8 +87,16 @@ describe("Pix/boleto subscription checkout generates the first invoice automatic
 
     // THE bug: this used to be a real future Date here, which made the tenant NOT due for a
     // month. It must stay null (or otherwise not-yet-due) until an actual charge is generated.
+    //
+    // status stays "pending_payment" (not "active") here — a SEPARATE bug fixed live in
+    // production on 2026-09-28: checkout alone used to flip status to "active" before any
+    // payment was actually confirmed, granting full product access with zero money paid (this
+    // product has no trial period). Only the PagBank webhook's charge.paid handler
+    // (modules/billing/webhook.ts) is now allowed to promote a subscription to "active" — see
+    // modules/auth/rbac.ts's requireSession/requireRole for the access-side enforcement of this,
+    // and tests/integration/rbac.test.ts for a dedicated test of the block/unblock cycle.
     const afterCheckout = await getSubscriptionRow(db, tenantId);
-    expect(afterCheckout?.status).toBe("active");
+    expect(afterCheckout?.status).toBe("pending_payment");
     expect(afterCheckout?.payment_method).toBe("pix_boleto");
     expect(afterCheckout?.current_period_end).toBeNull();
   });
