@@ -49,6 +49,16 @@ async function invoiceCount(db: Client, tenantId: string): Promise<number> {
   return Number(rows[0]?.count ?? 0);
 }
 
+function expectPixCheckoutResponse(res: { status: number; body: unknown }): void {
+  // The test gateway URL is deliberately unreachable. Checkout now returns 503 when no usable
+  // Pix QR is available, instead of claiming success with an empty invoice; a real gateway
+  // response that includes a QR still returns 201.
+  expect([201, 503]).toContain(res.status);
+  if (res.status === 503) {
+    expect((res.body as { code?: string }).code).toBe("PAYMENT_UNAVAILABLE");
+  }
+}
+
 describe("Pix/boleto subscription checkout generates the first invoice automatically (not just on the next daily cron)", () => {
   let planId: string;
   let db: Client;
@@ -83,7 +93,7 @@ describe("Pix/boleto subscription checkout generates the first invoice automatic
     expect(beforeCheckout?.current_period_end).toBeNull();
 
     const res = await client.post("/api/billing/subscription", { planId, paymentMethod: "pix_boleto" });
-    expect(res.status).toBe(201);
+    expectPixCheckoutResponse(res);
 
     // THE bug: this used to be a real future Date here, which made the tenant NOT due for a
     // month. It must stay null (or otherwise not-yet-due) until an actual charge is generated.
@@ -109,7 +119,7 @@ describe("Pix/boleto subscription checkout generates the first invoice automatic
     const totalBefore = Object.values(before).reduce((sum, n) => sum + n, 0);
 
     const res = await client.post("/api/billing/subscription", { planId, paymentMethod: "pix_boleto" });
-    expect(res.status).toBe(201);
+    expectPixCheckoutResponse(res);
 
     // Give BullMQ a moment to register the enqueue (in-process Redis round-trip, not a worker
     // run) — this asserts the ENQUEUE happened, independent of whether a worker is even running
@@ -152,7 +162,7 @@ describe("Pix/boleto subscription checkout generates the first invoice automatic
     async () => {
       const { client, tenantId } = await signUpAndLogin(planId);
       const res = await client.post("/api/billing/subscription", { planId, paymentMethod: "pix_boleto" });
-      expect(res.status).toBe(201);
+      expectPixCheckoutResponse(res);
 
       // Poll for the job to be processed (completed OR failed — either is a clean outcome here,
       // since PAGBANK_API_KEY=dev-placeholder cannot authenticate against the real sandbox).
