@@ -114,6 +114,10 @@ export default defineConfig({
         PAGBANK_API_KEY: "e2e-no-gateway-key",
         PAGBANK_BASE_URL: "http://127.0.0.1:1",
         PAGBANK_WEBHOOK_SECRET: "e2e-webhook-secret-not-real",
+        // Vazio (não "e2e-..."-style dummy) de propósito: sendTransactionalEmail
+        // (libs/shared/src/email) trata string vazia como "sem chave configurada" e nem tenta a
+        // chamada de rede — um valor dummy não-vazio ainda bateria de verdade na API do Resend.
+        RESEND_API_KEY: "",
         RATE_LIMIT_SIGNUP_IP_MAX: "100",
         RATE_LIMIT_LOGIN_IP_MAX: "100",
       },

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { ConflictError, NotFoundError, platformPrisma, withTenant } from "@estoque-saas/shared";
+import { ConflictError, NotFoundError, escapeHtml, platformPrisma, sendTransactionalEmail, withTenant } from "@estoque-saas/shared";
 import { Prisma } from "@prisma/client";
 import { hashPassword } from "./password";
 
@@ -83,6 +83,18 @@ export async function signupTenant(input: SignupInput): Promise<SignupResult> {
     }
     throw err;
   }
+
+  // Best-effort — sendTransactionalEmail nunca lança (ver libs/shared/src/email). Um provedor de
+  // e-mail fora do ar não pode impedir a conclusão do cadastro; se falhar, fica só no log.
+  await sendTransactionalEmail({
+    to: input.adminEmail,
+    subject: "Bem-vindo à Zolo",
+    html: `
+      <p>Olá, ${escapeHtml(input.adminName)}!</p>
+      <p>Sua conta na Zolo foi criada com sucesso para <strong>${escapeHtml(input.companyName)}</strong>.</p>
+      <p>Já pode acessar o sistema e começar a configurar seu estoque.</p>
+    `,
+  });
 
   return { tenantId, userId };
 }

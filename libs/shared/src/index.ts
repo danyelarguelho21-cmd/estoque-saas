@@ -1,5 +1,6 @@
 export * from "./db/client";
 export * from "./audit/index";
+export * from "./email/index";
 export * from "./payments/provider";
 export * from "./payments/providers/pagbank";
 export * from "./errors/index";
