@@ -324,6 +324,7 @@ export interface Invoice {
   paidAt: string | null;
   paymentMethod: "card" | "pix" | "boleto";
   pixQrCode: string | null;
+  pixQrCodeImageUrl: string | null;
   boletoUrl: string | null;
 }
 

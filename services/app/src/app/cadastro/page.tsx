@@ -119,11 +119,12 @@ function SignupPageInner() {
           expYear: expYear ?? "",
           cvv: cardCvv,
         });
-        await billingApi.createSubscription({ planId: selectedPlanId, paymentMethod: "card", cardToken });
+        const checkout = await billingApi.createSubscription({ planId: selectedPlanId, paymentMethod: "card", cardToken });
+        router.push(checkout.subscription.status === "active" ? "/painel" : "/assinatura");
       } else {
         await billingApi.createSubscription({ planId: selectedPlanId, paymentMethod: "pix_boleto" });
+        router.push("/assinatura");
       }
-      router.push("/painel");
     } catch (err) {
       if (err instanceof PagBankNotLoadedError) {
         setError(

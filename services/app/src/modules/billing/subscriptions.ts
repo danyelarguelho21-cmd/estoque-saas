@@ -22,8 +22,8 @@ export interface CreateSubscriptionInput {
 // Assina um plano (api/openapi/billing.yaml#createSubscription) — atualiza a MESMA linha de
 // subscription criada em trialing pelo signup (modules/auth/signup.ts), nunca cria uma segunda.
 // Cartão: recorrência nativa PagBank. Pix/boleto: sem cobrança nativa recorrente disponível
-// (ADR-004) — status vira 'active' e a cobrança mensal em si é gerada pelo job
-// `generate-monthly-charge` (worker), não por este endpoint.
+// (ADR-004) — status fica 'pending_payment' até o webhook confirmar a cobrança Pix; o endpoint
+// de checkout gera a cobrança antes de responder e o worker cuida dos ciclos seguintes.
 export async function createSubscription(tenantId: string, input: CreateSubscriptionInput) {
   // `tenants` é RLS-protegida (ADR-002) — platformPrisma nunca tem app.tenant_id setado, então
   // uma leitura direta sempre falhava (bug real encontrado testando via Docker; ver comentário em
@@ -92,9 +92,8 @@ export async function createSubscription(tenantId: string, input: CreateSubscrip
     // choosing pix/boleto at checkout disabled the "primeiro ciclo gerado automaticamente" promise
     // (cadastro/page.tsx) for 30 days, so "Assinatura → Faturas" stayed empty indefinitely.
     // Leaving both fields untouched here (they're already null from signup.ts's initial
-    // pending_payment row) keeps this subscription "due" so the immediate job enqueued below (and
-    // the daily generate-monthly-charge cron as a backstop) actually generates the first invoice.
-    // generateChargeForTenant() is what correctly sets these fields once a charge is generated.
+    // pending_payment row) keeps this subscription "due" so createOrGetInitialInvoice() can create
+    // the first invoice immediately. generateChargeForTenant() sets these fields after generation.
     //
     // BUG FIX #2 (found live via manual test in production, 2026-09-28): status virava "active"
     // AQUI, antes de qualquer pagamento real — uma sessão válida já bastava pra acesso pleno ao

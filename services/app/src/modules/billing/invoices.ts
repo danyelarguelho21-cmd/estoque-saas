@@ -1,4 +1,5 @@
 import { withTenant } from "@estoque-saas/shared";
+import { getPaymentProvider } from "./provider";
 
 export interface ListInvoicesFilters {
   cursor?: string | undefined;
@@ -17,4 +18,15 @@ export async function listInvoices(tenantId: string, filters: ListInvoicesFilter
     const page = hasMore ? invoices.slice(0, limit) : invoices;
     return { items: page, page: { next_cursor: hasMore ? (page.at(-1)?.id ?? null) : null, has_more: hasMore } };
   });
+}
+
+export async function getPixQrCodeImage(tenantId: string, invoiceId: string) {
+  const invoice = await withTenant(tenantId, (tx) =>
+    tx.invoice.findFirst({
+      where: { id: invoiceId, paymentMethod: "pix" },
+      select: { pixQrCodeImageUrl: true },
+    }),
+  );
+  if (!invoice?.pixQrCodeImageUrl) return null;
+  return getPaymentProvider().fetchPixQrCodeImage(invoice.pixQrCodeImageUrl);
 }

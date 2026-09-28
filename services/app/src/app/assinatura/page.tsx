@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { QrCode } from "lucide-react";
+import { Check, Copy, QrCode } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,12 +36,54 @@ const INVOICE_STATUS_LABEL: Record<string, string> = {
 export default function SubscriptionPage() {
   const queryClient = useQueryClient();
   const { notify } = useToast();
-  const subscriptionQuery = useQuery({ queryKey: ["subscription"], queryFn: billingApi.getSubscription });
+  const subscriptionQuery = useQuery({
+    queryKey: ["subscription"],
+    queryFn: billingApi.getSubscription,
+    refetchInterval: (query) =>
+      query.state.data?.status === "pending_payment" || query.state.data?.status === "past_due" ? 5000 : false,
+  });
   const plansQuery = useQuery({ queryKey: ["plans"], queryFn: billingApi.listPlans });
-  const invoicesQuery = useQuery({ queryKey: ["invoices"], queryFn: () => billingApi.listInvoices({ limit: 20 }) });
+  const invoicesQuery = useQuery({
+    queryKey: ["invoices"],
+    queryFn: () => billingApi.listInvoices({ limit: 20 }),
+    refetchInterval: subscriptionQuery.data?.status === "pending_payment" || subscriptionQuery.data?.status === "past_due" ? 5000 : false,
+  });
 
   const [changingPlanId, setChangingPlanId] = useState<string | null>(null);
   const [downgradeError, setDowngradeError] = useState<string | null>(null);
+  const [copiedInvoiceId, setCopiedInvoiceId] = useState<string | null>(null);
+  const [retryingCheckout, setRetryingCheckout] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  const pendingInvoice = invoicesQuery.data?.items.find((invoice) => invoice.status !== "paid");
+
+  async function retryPixCheckout() {
+    const planId = subscriptionQuery.data?.planId;
+    if (!planId) return;
+    setRetryingCheckout(true);
+    setCheckoutError(null);
+    try {
+      await billingApi.createSubscription({ planId, paymentMethod: "pix_boleto" });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["subscription"] }),
+        queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+      ]);
+    } catch {
+      setCheckoutError("Não foi possível gerar a cobrança Pix. Aguarde um instante e tente novamente.");
+    } finally {
+      setRetryingCheckout(false);
+    }
+  }
+
+  async function copyPixCode(invoiceId: string, code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedInvoiceId(invoiceId);
+      notify({ title: "Código Pix copiado", variant: "success" });
+    } catch {
+      notify({ title: "Não foi possível copiar", description: "Selecione e copie o código Pix manualmente.", variant: "error" });
+    }
+  }
 
   async function handleChangePlan(planId: string) {
     setChangingPlanId(planId);
@@ -114,6 +156,45 @@ export default function SubscriptionPage() {
               )}
             </CardContent>
           </Card>
+
+          {invoicesQuery.data?.items
+            .filter((invoice) => invoice.status !== "paid" && invoice.paymentMethod === "pix" && invoice.pixQrCode)
+            .slice(0, 1)
+            .map((invoice) => (
+              <Card key={invoice.id} className="border-2 border-[var(--color-primary)]">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><QrCode className="h-5 w-5" aria-hidden /> Pague sua assinatura via Pix</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-5 sm:grid-cols-[220px_1fr]">
+                  <div className="flex min-h-52 items-center justify-center rounded-lg bg-white p-3">
+                    {invoice.pixQrCodeImageUrl ? (
+                      <img src={`/api/billing/invoices/${invoice.id}/pix-qr`} alt="QR Code Pix para pagar a assinatura" width={196} height={196} />
+                    ) : <p className="max-w-44 text-center text-sm text-[var(--color-muted)]">Use o código Pix ao lado para pagar pelo aplicativo do seu banco.</p>}
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <p className="text-sm text-[var(--color-muted)]">Escaneie o QR Code no aplicativo do seu banco ou copie o código Pix. O acesso é liberado após a confirmação do pagamento.</p>
+                    <p className="text-sm font-semibold">{formatCentsToBRL(invoice.amountCents)} · vence em {formatDateBR(invoice.dueDate)}</p>
+                    <textarea readOnly value={invoice.pixQrCode ?? ""} aria-label="Código Pix copia e cola" className="min-h-24 w-full rounded-md border border-[var(--color-border)] p-3 text-xs" />
+                    <Button type="button" variant="outline" onClick={() => void copyPixCode(invoice.id, invoice.pixQrCode!)}>
+                      {copiedInvoiceId === invoice.id ? <Check className="mr-2 h-4 w-4" aria-hidden /> : <Copy className="mr-2 h-4 w-4" aria-hidden />}
+                      {copiedInvoiceId === invoice.id ? "Copiado" : "Copiar código Pix"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+
+          {subscriptionQuery.data?.status === "pending_payment" && !pendingInvoice && (
+            <Card>
+              <CardContent className="flex flex-col items-start gap-3 pt-6">
+                <p className="text-sm text-[var(--color-muted)]">Ainda não há cobrança Pix disponível para esta assinatura.</p>
+                {checkoutError && <Alert variant="danger">{checkoutError}</Alert>}
+                <Button type="button" loading={retryingCheckout} onClick={() => void retryPixCheckout()}>
+                  Gerar cobrança Pix
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

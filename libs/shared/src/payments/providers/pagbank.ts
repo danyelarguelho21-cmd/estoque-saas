@@ -93,7 +93,7 @@ export class PagBankTimeoutError extends Error {
 async function pagbankFetch(
   url: string,
   apiKey: string,
-  init: { method: "GET" | "POST" | "PUT"; body?: unknown },
+  init: { method: "GET" | "POST" | "PUT"; body?: unknown; idempotencyKey?: string },
 ): Promise<unknown> {
   const requestInit: RequestInit = {
     method: init.method,
@@ -101,6 +101,7 @@ async function pagbankFetch(
       Authorization: `Bearer ${apiKey}`,
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...(init.idempotencyKey ? { "x-idempotency-key": init.idempotencyKey } : {}),
     },
     signal: AbortSignal.timeout(PAGBANK_REQUEST_TIMEOUT_MS),
   };
@@ -196,7 +197,7 @@ export class PagBankProvider implements PaymentProvider {
           },
         ],
       };
-      const json = await pagbankFetch(`${base}/orders`, this.config.apiKey, { method: "POST", body });
+      const json = await pagbankFetch(`${base}/orders`, this.config.apiKey, { method: "POST", body, idempotencyKey: input.idempotencyKey });
       const parsed = json as {
         charges: Array<{ id: string; payment_method: { boleto?: { formatted_barcode?: string } }; links?: Array<{ href: string; media: string }> }>;
       };
@@ -207,28 +208,60 @@ export class PagBankProvider implements PaymentProvider {
       return result;
     }
 
-    // pix: gera QR code ao nível do pedido (Orders "qr_codes")
+    // A API atual de QR Pix devolve o código e links dentro de charges[].qr_code/links.
     const body = {
       reference_id: `tenant-${input.tenantId}-${Date.now()}`,
       customer,
       items: [{ reference_id: "assinatura-mensal", name: "Assinatura estoque-saas", quantity: 1, unit_amount: input.amountCents }],
       notification_urls: notificationUrls,
-      qr_codes: [
+      charges: [
         {
-          amount: { value: input.amountCents },
-          expiration_date: `${input.dueDate}T23:59:59-03:00`,
+          reference_id: `charge-${input.tenantId.replace(/-/g, "")}-${input.idempotencyKey.slice(-8)}`,
+          description: "Assinatura Zolo",
+          amount: { value: input.amountCents, currency: "BRL" },
+          payment_method: {
+            type: "PIX",
+            pix: { expiration_date: `${input.dueDate}T23:59:59-03:00` },
+          },
         },
       ],
     };
-    const json = await pagbankFetch(`${base}/orders`, this.config.apiKey, { method: "POST", body });
+    const json = await pagbankFetch(`${base}/orders`, this.config.apiKey, { method: "POST", body, idempotencyKey: input.idempotencyKey });
     const parsed = json as {
       id: string;
+      charges?: Array<{
+        id?: string;
+        qr_code?: { text?: string };
+        links?: Array<{ rel?: string; href?: string }>;
+      }>;
       qr_codes?: Array<{ id: string; text?: string }>;
     };
-    const qr = parsed.qr_codes?.[0];
-    const result: OneOffChargeResult = { gatewayChargeId: parsed.id };
-    if (qr?.text !== undefined) result.pixQrCode = qr.text;
+    const charge = parsed.charges?.[0];
+    const qrText = charge?.qr_code?.text ?? parsed.qr_codes?.[0]?.text;
+    const result: OneOffChargeResult = { gatewayChargeId: charge?.id ?? parsed.id };
+    if (qrText !== undefined) result.pixQrCode = qrText;
+    const qrImage = charge?.links?.find((link) => link.rel === "QRCODE.PNG")?.href;
+    if (qrImage) result.pixQrCodeImageUrl = qrImage;
     return result;
+  }
+
+  async fetchPixQrCodeImage(imageUrl: string): Promise<Uint8Array> {
+    const url = new URL(imageUrl);
+    const apiHost = new URL(this.config.baseUrl).hostname;
+    if (url.protocol !== "https:" || url.hostname !== apiHost || !url.pathname.startsWith("/qrcode/")) {
+      throw new Error("URL de imagem do QR Pix inválida.");
+    }
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${this.config.apiKey}`, Accept: "image/png" },
+      signal: AbortSignal.timeout(PAGBANK_REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) throw new Error(`PagBank não retornou a imagem do QR Pix (${response.status}).`);
+    if (!response.headers.get("content-type")?.toLowerCase().startsWith("image/png")) {
+      throw new Error("PagBank retornou um formato inesperado para a imagem do QR Pix.");
+    }
+    const image = new Uint8Array(await response.arrayBuffer());
+    if (image.byteLength > 1_000_000) throw new Error("Imagem do QR Pix excede o tamanho permitido.");
+    return image;
   }
 
   async cancelSubscription(gatewaySubscriptionId: string): Promise<void> {
@@ -267,11 +300,14 @@ export class PagBankProvider implements PaymentProvider {
     const charge = charges?.[0];
     if (charge) {
       const gatewayEventId = String(obj["id"] ?? charge.id);
+      // invoices.gateway_charge_id stores the PagBank charge ID returned by POST /orders,
+      // which is charges[0].id. A webhook's top-level id is the order ID, so look up by charge.
+      const gatewayChargeId = charge.id;
       if (charge.status === "PAID") {
         return {
           type: "charge.paid",
           gatewayEventId,
-          gatewayChargeId: charge.id,
+          gatewayChargeId,
           paidAt: new Date().toISOString(),
         };
       }
@@ -279,7 +315,7 @@ export class PagBankProvider implements PaymentProvider {
         return {
           type: "charge.failed",
           gatewayEventId,
-          gatewayChargeId: charge.id,
+          gatewayChargeId,
           reason: charge.status,
         };
       }

@@ -17,6 +17,7 @@ export interface RecurringChargeResult {
 
 export interface OneOffChargeInput {
   tenantId: string;
+  idempotencyKey: string;
   amountCents: number;
   dueDate: string; // ISO date
   method: "pix" | "boleto";
@@ -33,6 +34,7 @@ export interface OneOffChargeInput {
 export interface OneOffChargeResult {
   gatewayChargeId: string;
   pixQrCode?: string;
+  pixQrCodeImageUrl?: string;
   boletoUrl?: string;
 }
 
@@ -44,6 +46,7 @@ export type PaymentWebhookEvent =
 export interface PaymentProvider {
   createRecurringCardCharge(input: RecurringChargeInput): Promise<RecurringChargeResult>;
   createOneOffCharge(input: OneOffChargeInput): Promise<OneOffChargeResult>;
+  fetchPixQrCodeImage(imageUrl: string): Promise<Uint8Array>;
   cancelSubscription(gatewaySubscriptionId: string): Promise<void>;
   verifyWebhookSignature(payload: string, signature: string): boolean;
   parseWebhookEvent(payload: unknown): PaymentWebhookEvent;

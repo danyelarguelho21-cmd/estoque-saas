@@ -36,6 +36,21 @@ export async function generateMonthlyCharges(): Promise<{ generated: number; ski
   return { generated, skipped, failed };
 }
 
+// Checkout não deve depender da janela do cron/worker para disponibilizar pagamento. Este
+// caminho gera a primeira cobrança na própria requisição e devolve a fatura persistida à UI.
+// O lock compartilhado com o cron torna seguro o caso em que ambos tentam gerar ao mesmo tempo.
+export async function createOrGetInitialInvoice(tenantId: string) {
+  await generateChargeForTenant(tenantId);
+  return withTenant(tenantId, async (tx) => {
+    const subscription = await tx.subscription.findFirst({ orderBy: { createdAt: "desc" } });
+    if (!subscription) return null;
+    return tx.invoice.findFirst({
+      where: { subscriptionId: subscription.id },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+  });
+}
+
 async function generateChargeForTenant(tenantId: string): Promise<boolean> {
   return withTenant(tenantId, async (tx) => {
     // Same contention fix as CR-1/HI-4 (see lockOnKey's doc comment, libs/shared/src/db/client.ts):
@@ -93,6 +108,7 @@ async function generateChargeForTenant(tenantId: string): Promise<boolean> {
     const provider = getPaymentProvider();
     const charge = await provider.createOneOffCharge({
       tenantId,
+      idempotencyKey: `zolo${subscription.id.replace(/-/g, "")}${subscription.currentPeriodEnd?.toISOString().slice(0, 10).replace(/-/g, "") ?? "initial"}`,
       amountCents: plan.priceCents,
       dueDate: dueDateIso,
       method: "pix",
@@ -100,6 +116,9 @@ async function generateChargeForTenant(tenantId: string): Promise<boolean> {
       customerName: tenant.name,
       customerTaxId,
     });
+    if (!charge.gatewayChargeId || !charge.pixQrCode) {
+      throw new Error("PagBank criou o pedido sem retornar o identificador da cobrança e o código Pix.");
+    }
 
     const invoice = await tx.invoice.create({
       data: {
@@ -111,6 +130,7 @@ async function generateChargeForTenant(tenantId: string): Promise<boolean> {
         paymentMethod: "pix",
         gatewayChargeId: charge.gatewayChargeId,
         pixQrCode: charge.pixQrCode ?? null,
+        pixQrCodeImageUrl: charge.pixQrCodeImageUrl ?? null,
       },
     });
 

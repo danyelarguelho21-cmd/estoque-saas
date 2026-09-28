@@ -134,6 +134,7 @@ model Invoice {
   gatewayChargeId  String?      @map("gateway_charge_id")
   gatewayEventId   String?      @unique @map("gateway_event_id")
   pixQrCode        String?      @map("pix_qr_code")
+  pixQrCodeImageUrl String?     @map("pix_qr_code_image_url")
   boletoUrl        String?      @map("boleto_url")
   createdAt        DateTime     @default(now()) @map("created_at")
 
