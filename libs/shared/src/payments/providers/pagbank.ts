@@ -204,6 +204,11 @@ export class PagBankProvider implements PaymentProvider {
       tax_id: onlyDigits(input.customerTaxId),
     };
     const webhookUrl = getPublicWebhookUrl(this.config.webhookNotificationUrl);
+    if (!webhookUrl && !base.includes("sandbox")) {
+      throw new Error(
+        "PagBank em produção exige uma URL pública HTTPS de webhook. Configure PAGBANK_WEBHOOK_NOTIFICATION_URL ou AUTH_URL.",
+      );
+    }
     const notificationUrls = webhookUrl ? [webhookUrl] : undefined;
 
     if (input.method === "boleto") {
