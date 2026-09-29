@@ -204,7 +204,8 @@ export class PagBankProvider implements PaymentProvider {
       tax_id: onlyDigits(input.customerTaxId),
     };
     const webhookUrl = getPublicWebhookUrl(this.config.webhookNotificationUrl);
-    if (!webhookUrl && !base.includes("sandbox")) {
+    const isPagBankProduction = new URL(base).hostname === "api.pagseguro.com";
+    if (!webhookUrl && isPagBankProduction) {
       throw new Error(
         "PagBank em produção exige uma URL pública HTTPS de webhook. Configure PAGBANK_WEBHOOK_NOTIFICATION_URL ou AUTH_URL.",
       );
