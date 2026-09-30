@@ -1,5 +1,6 @@
 import { UnauthorizedError, platformPrisma, recordAudit, sendTransactionalEmail, withTenant } from "@estoque-saas/shared";
-import { getPaymentProvider } from "./provider";
+import { getPagBankProvider, getPaymentProvider } from "./provider";
+import { VindiProvider } from "@estoque-saas/shared";
 
 interface GatewayRefLookupRow {
   tenant_id: string;
@@ -44,28 +45,47 @@ function buildPaymentConfirmationHtml(data: PaymentConfirmationEmailData): strin
 // um 200 de "fatura realmente atualizada" eram indistinguíveis de fora, e uma assinatura inválida
 // (UnauthorizedError é um AppError) nem cai no log genérico de erro não tratado do handleRoute.
 export async function processPagBankWebhook(rawBody: string, signatureHeader: string | null): Promise<void> {
-  const provider = getPaymentProvider();
+  const provider = getPagBankProvider();
 
   if (!signatureHeader || !provider.verifyWebhookSignature(rawBody, signatureHeader)) {
     console.warn("[webhook-pagbank] assinatura ausente ou inválida — requisição rejeitada (401)");
     throw new UnauthorizedError("Assinatura do webhook inválida.");
   }
 
+  await processVerifiedWebhook(rawBody, provider);
+}
+
+export async function processVindiWebhook(rawBody: string, secret: string | null): Promise<void> {
+  const provider = getPaymentProvider();
+  if (!(provider instanceof VindiProvider) || !secret || !provider.verifyWebhookSignature(rawBody, secret)) {
+    console.warn("[webhook-vindi] segredo ausente/inválido ou gateway não selecionado — requisição rejeitada");
+    throw new UnauthorizedError("Autenticação do webhook Vindi inválida.");
+  }
+  await processVerifiedWebhook(rawBody, provider);
+}
+
+async function processVerifiedWebhook(rawBody: string, provider: VindiProvider | ReturnType<typeof getPagBankProvider>): Promise<void> {
   const payload = JSON.parse(rawBody) as unknown;
   const event = provider.parseWebhookEvent(payload);
+  if (event.type === "ignored") {
+    console.info(`[webhook-vindi] evento de verificação ou tipo não tratado recebido: ${event.gatewayEventId}`);
+    return;
+  }
   console.log(`[webhook-pagbank] recebido, assinatura válida: type=${event.type}`);
 
-  const chargeId = event.type === "charge.paid" || event.type === "charge.failed" ? event.gatewayChargeId : null;
+  const chargeId = event.type === "charge.paid" || event.type === "charge.failed" || event.type === "charge.created" ? event.gatewayChargeId : null;
   const subscriptionId = event.type === "subscription.canceled" ? event.gatewaySubscriptionId : null;
+  const relatedSubscriptionId = event.type === "charge.created" ? event.gatewaySubscriptionId : subscriptionId;
 
   const rows = await platformPrisma.$queryRaw<GatewayRefLookupRow[]>`
-    SELECT * FROM billing_lookup_tenant_by_gateway_ref(${chargeId}, ${subscriptionId})
+    SELECT * FROM billing_lookup_tenant_by_gateway_ref(${chargeId}, ${relatedSubscriptionId})
   `;
   const match = rows[0];
   if (!match) {
     // Evento não corresponde a nenhuma fatura/assinatura conhecida — descarta silenciosamente
     // (pode ser um evento de um ambiente diferente, ex: sandbox vs produção). Nunca lança 500 aqui.
     console.warn(`[webhook-pagbank] sem match: type=${event.type} chargeId=${chargeId ?? "-"} subscriptionId=${subscriptionId ?? "-"} — descartado`);
+    if (provider instanceof VindiProvider) throw new Error("Vindi webhook ainda sem fatura/assinatura vinculada; solicitar nova tentativa.");
     return;
   }
 
@@ -82,6 +102,28 @@ export async function processPagBankWebhook(rawBody: string, signatureHeader: st
   // devolver o dado necessário evita segurar a conexão/transação aberta enquanto o e-mail (chamada
   // HTTP externa ao Resend) é enviado depois, fora da transação.
   const paymentConfirmationEmail = await withTenant(match.tenant_id, async (tx): Promise<PaymentConfirmationEmailData | null> => {
+    if (event.type === "charge.created" && match.subscription_id) {
+      const existing = await tx.invoice.findFirst({ where: { gatewayChargeId: event.gatewayChargeId } });
+      if (existing) return null;
+      const invoice = await tx.invoice.create({
+        data: {
+          tenantId: match.tenant_id,
+          subscriptionId: match.subscription_id,
+          amountCents: event.amountCents,
+          status: "pending",
+          dueDate: new Date(event.dueDate),
+          paymentMethod: event.paymentMethod,
+          gatewayChargeId: event.gatewayChargeId,
+          gatewayEventId: event.gatewayEventId,
+          pixQrCode: event.pixQrCode ?? null,
+          boletoUrl: event.paymentUrl ?? null,
+        },
+      });
+      await recordAudit(tx, { tenantId: match.tenant_id, userId: null, entityType: "invoice", entityId: invoice.id, action: "create", after: { status: "pending", amountCents: invoice.amountCents } });
+      console.log(`[webhook-vindi] bill_created tenant=${match.tenant_id} invoice=${invoice.id} subscription=${match.subscription_id}`);
+      return null;
+    }
+
     if (event.type === "charge.paid" && match.invoice_id) {
       const updated = await tx.invoice.updateMany({
         where: { id: match.invoice_id, OR: [{ gatewayEventId: null }, { gatewayEventId: { not: event.gatewayEventId } }] },

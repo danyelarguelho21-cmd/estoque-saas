@@ -40,6 +40,15 @@ export async function generateMonthlyCharges(): Promise<{ generated: number; ski
 // caminho gera a primeira cobrança na própria requisição e devolve a fatura persistida à UI.
 // O lock compartilhado com o cron torna seguro o caso em que ambos tentam gerar ao mesmo tempo.
 export async function createOrGetInitialInvoice(tenantId: string) {
+  const existing = await withTenant(tenantId, async (tx) => {
+    const subscription = await tx.subscription.findFirst({ orderBy: { createdAt: "desc" } });
+    if (!subscription) return null;
+    return tx.invoice.findFirst({
+      where: { subscriptionId: subscription.id, status: { in: ["pending", "overdue"] } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+  });
+  if (existing) return existing;
   await generateChargeForTenant(tenantId);
   return withTenant(tenantId, async (tx) => {
     const subscription = await tx.subscription.findFirst({ orderBy: { createdAt: "desc" } });
@@ -61,6 +70,9 @@ async function generateChargeForTenant(tenantId: string): Promise<boolean> {
 
     const subscription = await tx.subscription.findFirst({ orderBy: { createdAt: "desc" } });
     if (!subscription || subscription.paymentMethod !== "pix_boleto") return false;
+    // A Vindi gera os ciclos seguintes dentro da assinatura recorrente e os comunica por webhook;
+    // não emitir uma cobrança avulsa paralela pelo worker.
+    if (getPaymentProvider().createRecurringPixCharge) return false;
     // "pending_payment" (estado inicial, sem período de teste — ver rbac.ts) precisa continuar
     // gerando a primeira cobrança normalmente; "trialing" mantido só por linhas antigas no banco.
     const BILLABLE_STATUSES = new Set(["active", "trialing", "pending_payment"]);

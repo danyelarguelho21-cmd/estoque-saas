@@ -49,6 +49,10 @@ services:
     build:
       context: .
       dockerfile: services/app/Dockerfile
+      args:
+        NEXT_PUBLIC_PAYMENT_PROVIDER: ${NEXT_PUBLIC_PAYMENT_PROVIDER:-pagbank}
+        NEXT_PUBLIC_VINDI_PUBLIC_API_KEY: ${NEXT_PUBLIC_VINDI_PUBLIC_API_KEY:-}
+        NEXT_PUBLIC_VINDI_API_BASE_URL: ${NEXT_PUBLIC_VINDI_API_BASE_URL:-https://sandbox-app.vindi.com.br/api/v1}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -102,6 +106,10 @@ services:
     build:
       context: .
       dockerfile: services/app/Dockerfile
+      args:
+        NEXT_PUBLIC_PAYMENT_PROVIDER: ${NEXT_PUBLIC_PAYMENT_PROVIDER:-pagbank}
+        NEXT_PUBLIC_VINDI_PUBLIC_API_KEY: ${NEXT_PUBLIC_VINDI_PUBLIC_API_KEY:-}
+        NEXT_PUBLIC_VINDI_API_BASE_URL: ${NEXT_PUBLIC_VINDI_API_BASE_URL:-https://sandbox-app.vindi.com.br/api/v1}
     command: ["npm", "run", "worker", "--workspace", "services/app"]
     restart: unless-stopped
     env_file: .env

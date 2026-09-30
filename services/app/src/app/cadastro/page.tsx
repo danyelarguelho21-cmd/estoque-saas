@@ -123,8 +123,8 @@ function SignupPageInner() {
         router.push(checkout.subscription.status === "active" ? "/painel" : "/assinatura");
       } else {
         const checkout = await billingApi.createSubscription({ planId: selectedPlanId, paymentMethod: "pix_boleto" });
-        if (!checkout.invoice?.pixQrCode) {
-          throw new Error("A cobrança foi solicitada, mas o PagBank não retornou o código Pix. Entre em Assinatura e tente novamente.");
+        if (!checkout.invoice?.pixQrCode && !checkout.invoice?.boletoUrl) {
+          throw new Error("A cobrança foi solicitada, mas a Vindi não retornou o QR Code nem o link da fatura. Tente novamente.");
         }
         router.push("/assinatura");
       }
@@ -294,7 +294,9 @@ function SignupPageInner() {
               <QrCode className="h-5 w-5 text-slate-500" aria-hidden />
               <div>
                 <p className="text-sm font-medium text-slate-900">Pix ou boleto</p>
-                <p className="text-xs text-[var(--color-muted)]">Cobrança avulsa gerada todo mês</p>
+                <p className="text-xs text-[var(--color-muted)]">
+                  {process.env.NEXT_PUBLIC_PAYMENT_PROVIDER === "vindi" ? "Fatura mensal com Pix ou boleto" : "Cobrança mensal por Pix ou boleto"}
+                </p>
               </div>
             </button>
           </div>

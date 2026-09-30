@@ -3,6 +3,7 @@ export * from "./audit/index";
 export * from "./email/index";
 export * from "./payments/provider";
 export * from "./payments/providers/pagbank";
+export * from "./payments/providers/vindi";
 export * from "./errors/index";
 export * from "./rbac/index";
 export * from "./plan-limits/index";

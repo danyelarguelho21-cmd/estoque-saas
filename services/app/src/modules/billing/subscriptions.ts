@@ -32,7 +32,9 @@ export async function createSubscription(tenantId: string, input: CreateSubscrip
   const admin = await withTenant(tenantId, (tx) =>
     tx.user.findFirstOrThrow({ where: { role: "admin" }, orderBy: { createdAt: "asc" } }),
   );
+  const tenant = await withTenant(tenantId, (tx) => tx.tenant.findUniqueOrThrow({ where: { id: tenantId } }));
   const plan = await platformPrisma.plan.findUniqueOrThrow({ where: { id: input.planId } });
+  const gatewayPlanId = getVindiPlanId(plan.name);
 
   return withTenant(tenantId, async (tx) => {
     const current = await tx.subscription.findFirst({ orderBy: { createdAt: "desc" } });
@@ -50,8 +52,11 @@ export async function createSubscription(tenantId: string, input: CreateSubscrip
         result = await provider.createRecurringCardCharge({
           tenantId,
           planId: plan.id,
+          ...(gatewayPlanId ? { gatewayPlanId } : {}),
           cardToken: input.cardToken,
           customerEmail: admin.email,
+          customerName: tenant.name,
+          customerTaxId: tenant.cnpj ?? tenant.cpf ?? "",
         });
       } catch (err) {
         const gatewayStatus = (err as { status?: unknown } | null)?.status;
@@ -80,6 +85,21 @@ export async function createSubscription(tenantId: string, input: CreateSubscrip
           currentPeriodEnd: addOneMonth(new Date()),
         },
       });
+      if (result.initialCharge) {
+        await tx.invoice.create({
+          data: {
+            tenantId,
+            subscriptionId: current.id,
+            amountCents: plan.priceCents,
+            status: result.initialChargeStatus === "paid" ? "paid" : result.initialChargeStatus === "failed" ? "failed" : "pending",
+            dueDate: result.initialCharge.dueDate ? new Date(result.initialCharge.dueDate) : new Date(),
+            paidAt: result.initialChargeStatus === "paid" ? new Date() : null,
+            paymentMethod: "card",
+            gatewayChargeId: result.initialCharge.gatewayChargeId,
+            boletoUrl: result.initialCharge.boletoUrl ?? null,
+          },
+        });
+      }
       await recordAudit(tx, { tenantId, userId: null, entityType: "subscription", entityId: updated.id, action: "update", after: { status: updated.status, paymentMethod: "card" } });
       return updated;
     }
@@ -102,6 +122,60 @@ export async function createSubscription(tenantId: string, input: CreateSubscrip
     // (modules/billing/webhook.ts, evento charge.paid) promove pra "active", quando o pagamento é
     // de fato confirmado. requireSession/requireRole (modules/auth/rbac.ts) bloqueiam acesso
     // pleno enquanto o status for pending_payment/trialing.
+    const provider = getPaymentProvider();
+    if (provider.createRecurringPixCharge) {
+      if (!gatewayPlanId) throw new PaymentRequiredError(`Plano ${plan.name} sem ID configurado na Vindi.`);
+      let result;
+      try {
+        result = await provider.createRecurringPixCharge({
+          tenantId,
+          planId: plan.id,
+          gatewayPlanId,
+          customerEmail: admin.email,
+          customerName: tenant.name,
+          customerTaxId: tenant.cnpj ?? tenant.cpf ?? "",
+        });
+      } catch (err) {
+        const status = (err as { status?: unknown } | null)?.status;
+        if (status === 401 || status === 403) {
+          throw new PaymentRequiredError("A Vindi recusou o acesso. Confirme se a chave privada e o plano são do mesmo ambiente Sandbox.");
+        }
+        if (status === 400 || status === 402 || status === 422) {
+          throw new PaymentRequiredError("A Vindi rejeitou a assinatura. Confira o plano Básico, a cobrança imediata e os métodos habilitados no Sandbox.");
+        }
+        throw err;
+      }
+      if (!result.initialCharge?.gatewayChargeId || (!result.initialCharge.pixQrCode && !result.initialCharge.boletoUrl)) {
+        throw new PaymentRequiredError("A Vindi criou a assinatura, mas não retornou a fatura inicial com link ou código Pix. Confira se o plano Sandbox está configurado para cobrança imediata.");
+      }
+      const updated = await tx.subscription.update({
+        where: { id: current.id },
+        data: {
+          planId: plan.id,
+          status: result.initialChargeStatus === "paid" ? "active" : "pending_payment",
+          paymentMethod: "pix_boleto",
+          gatewaySubscriptionId: result.gatewaySubscriptionId,
+          gatewayCustomerId: result.gatewayCustomerId,
+        },
+      });
+      await tx.invoice.create({
+        data: {
+          tenantId,
+          subscriptionId: current.id,
+          amountCents: plan.priceCents,
+          status: result.initialChargeStatus === "paid" ? "paid" : result.initialChargeStatus === "failed" ? "failed" : "pending",
+          dueDate: result.initialCharge.dueDate ? new Date(result.initialCharge.dueDate) : new Date(),
+          paidAt: result.initialChargeStatus === "paid" ? new Date() : null,
+          paymentMethod: "pix",
+          gatewayChargeId: result.initialCharge.gatewayChargeId,
+          pixQrCode: result.initialCharge.pixQrCode ?? null,
+          boletoUrl: result.initialCharge.boletoUrl ?? null,
+        },
+      });
+      await recordAudit(tx, { tenantId, userId: null, entityType: "subscription", entityId: updated.id, action: "update", after: { status: updated.status, paymentMethod: "pix_boleto" } });
+      return updated;
+    }
+
     const updated = await tx.subscription.update({
       where: { id: current.id },
       data: {
@@ -113,6 +187,13 @@ export async function createSubscription(tenantId: string, input: CreateSubscrip
     await recordAudit(tx, { tenantId, userId: null, entityType: "subscription", entityId: updated.id, action: "update", after: { status: updated.status, paymentMethod: "pix_boleto" } });
     return updated;
   });
+}
+
+function getVindiPlanId(planName: string): string | undefined {
+  if (process.env.PAYMENT_PROVIDER !== "vindi") return undefined;
+  const normalized = planName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  const suffix = normalized === "BASICO" ? "BASICO" : normalized;
+  return process.env[`VINDI_PLAN_ID_${suffix}`] || undefined;
 }
 
 // Upgrade/downgrade de plano (api/openapi/billing.yaml#changePlan) — bloqueia downgrade se o

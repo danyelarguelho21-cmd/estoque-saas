@@ -1,4 +1,4 @@
-import { PagBankProvider, type PaymentProvider } from "@estoque-saas/shared";
+import { PagBankProvider, VindiProvider, type PaymentProvider } from "@estoque-saas/shared";
 
 // Instância única do PaymentProvider (ADR-004) — o domínio de billing depende SOMENTE da
 // interface PaymentProvider, nunca do SDK/HTTP do PagBank diretamente. Construída lazily (não no
@@ -8,7 +8,23 @@ let cached: PaymentProvider | null = null;
 
 export function getPaymentProvider(): PaymentProvider {
   if (cached) return cached;
-  const provider = new PagBankProvider({
+  const provider = process.env.PAYMENT_PROVIDER === "vindi" ? new VindiProvider({
+    apiKey: process.env.VINDI_API_KEY ?? "",
+    webhookSecret: process.env.VINDI_WEBHOOK_SECRET ?? "",
+    baseUrl: process.env.VINDI_API_BASE_URL ?? "https://sandbox-app.vindi.com.br/api/v1",
+  }) : createPagBankProvider();
+  cached = provider;
+  return provider;
+}
+
+// Mantido separado para continuar aceitando notificações de cobranças PagBank já existentes
+// mesmo depois de selecionar a Vindi como gateway de novos checkouts.
+export function getPagBankProvider(): PaymentProvider {
+  return createPagBankProvider();
+}
+
+function createPagBankProvider(): PaymentProvider {
+  return new PagBankProvider({
     apiKey: process.env.PAGBANK_API_KEY ?? "",
     baseUrl: process.env.PAGBANK_BASE_URL ?? "https://sandbox.api.pagseguro.com",
     webhookSecret: process.env.PAGBANK_WEBHOOK_SECRET ?? "",
@@ -21,6 +37,4 @@ export function getPaymentProvider(): PaymentProvider {
         }
       : {}),
   });
-  cached = provider;
-  return provider;
 }

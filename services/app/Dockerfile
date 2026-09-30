@@ -11,6 +11,12 @@ COPY services/app/package.json services/app/package.json
 RUN npm install --workspaces --include-workspace-root
 
 FROM base AS build
+ARG NEXT_PUBLIC_PAYMENT_PROVIDER=pagbank
+ARG NEXT_PUBLIC_VINDI_PUBLIC_API_KEY=
+ARG NEXT_PUBLIC_VINDI_API_BASE_URL=https://sandbox-app.vindi.com.br/api/v1
+ENV NEXT_PUBLIC_PAYMENT_PROVIDER=$NEXT_PUBLIC_PAYMENT_PROVIDER
+ENV NEXT_PUBLIC_VINDI_PUBLIC_API_KEY=$NEXT_PUBLIC_VINDI_PUBLIC_API_KEY
+ENV NEXT_PUBLIC_VINDI_API_BASE_URL=$NEXT_PUBLIC_VINDI_API_BASE_URL
 COPY --from=deps /repo/node_modules ./node_modules
 COPY . .
 RUN npm run prisma:generate

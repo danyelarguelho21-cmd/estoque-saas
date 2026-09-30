@@ -65,7 +65,7 @@ export default function SubscriptionPage() {
     try {
       const checkout = await billingApi.createSubscription({ planId, paymentMethod: "pix_boleto" });
       if (!checkout.invoice?.pixQrCode) {
-        throw new Error("A cobrança foi solicitada, mas o PagBank não retornou o código Pix. Tente novamente em instantes.");
+        throw new Error("A cobrança foi solicitada, mas a Vindi não retornou o QR Code nem o link da fatura. Tente novamente em instantes.");
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["subscription"] }),
@@ -277,7 +277,7 @@ export default function SubscriptionPage() {
                       <TableCell>
                         {invoice.status !== "paid" && invoice.boletoUrl && (
                           <a href={invoice.boletoUrl} target="_blank" rel="noreferrer" className="text-[var(--color-primary)] hover:underline">
-                            Ver boleto
+                            Pagar fatura
                           </a>
                         )}
                         {invoice.status !== "paid" && invoice.pixQrCode && (

@@ -5,14 +5,28 @@
 export interface RecurringChargeInput {
   tenantId: string;
   planId: string;
+  gatewayPlanId?: string;
   cardToken: string;
   customerEmail: string;
+  customerName?: string;
+  customerTaxId?: string;
 }
 
 export interface RecurringChargeResult {
   gatewaySubscriptionId: string;
   gatewayCustomerId: string;
   status: "active" | "pending" | "failed";
+  initialCharge?: OneOffChargeResult & { dueDate?: string };
+  initialChargeStatus?: "paid" | "pending" | "failed";
+}
+
+export interface PixSubscriptionInput {
+  tenantId: string;
+  planId: string;
+  gatewayPlanId: string;
+  customerEmail: string;
+  customerName: string;
+  customerTaxId: string;
 }
 
 export interface OneOffChargeInput {
@@ -39,12 +53,15 @@ export interface OneOffChargeResult {
 }
 
 export type PaymentWebhookEvent =
+  | { type: "ignored"; gatewayEventId: string }
+  | { type: "charge.created"; gatewayEventId: string; gatewayChargeId: string; gatewaySubscriptionId: string; amountCents: number; dueDate: string; paymentMethod: "card" | "pix" | "boleto"; paymentUrl?: string; pixQrCode?: string }
   | { type: "charge.paid"; gatewayEventId: string; gatewayChargeId: string; paidAt: string }
   | { type: "charge.failed"; gatewayEventId: string; gatewayChargeId: string; reason: string }
   | { type: "subscription.canceled"; gatewayEventId: string; gatewaySubscriptionId: string };
 
 export interface PaymentProvider {
   createRecurringCardCharge(input: RecurringChargeInput): Promise<RecurringChargeResult>;
+  createRecurringPixCharge?(input: PixSubscriptionInput): Promise<RecurringChargeResult>;
   createOneOffCharge(input: OneOffChargeInput): Promise<OneOffChargeResult>;
   fetchPixQrCodeImage(imageUrl: string): Promise<Uint8Array>;
   cancelSubscription(gatewaySubscriptionId: string): Promise<void>;

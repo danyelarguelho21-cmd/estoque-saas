@@ -3,6 +3,6 @@
 export { listPlans } from "./plans";
 export { getSubscription, createSubscription, changePlan, type CreateSubscriptionInput } from "./subscriptions";
 export { listInvoices, getPixQrCodeImage, type ListInvoicesFilters } from "./invoices";
-export { processPagBankWebhook } from "./webhook";
+export { processPagBankWebhook, processVindiWebhook } from "./webhook";
 export { generateMonthlyCharges, createOrGetInitialInvoice } from "./monthly-charge";
 export { getPaymentProvider } from "./provider";
