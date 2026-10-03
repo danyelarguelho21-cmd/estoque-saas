@@ -8,14 +8,25 @@ const required = [
   "DOMAIN", "TLS_EMAIL", "AUTH_SECRET", "AUTH_URL", "PLATFORM_ADMIN_SESSION_SECRET",
   "POSTGRES_PASSWORD", "APP_DB_PASSWORD", "PLATFORM_ADMIN_DB_PASSWORD",
   "DATABASE_URL", "APP_DATABASE_URL", "PLATFORM_ADMIN_DATABASE_URL",
-  "PAGBANK_API_KEY", "PAGBANK_BASE_URL", "PAGBANK_WEBHOOK_SECRET",
   "PLATFORM_ADMIN_BOOTSTRAP_EMAIL", "PLATFORM_ADMIN_BOOTSTRAP_PASSWORD",
 ];
+// Gateway de pagamento: a Vindi é o provedor principal. PagBank só é exigido se PAYMENT_PROVIDER
+// não for "vindi" (compatibilidade com servidores antigos ainda configurados para o PagBank).
+const paymentProvider = (process.env.PAYMENT_PROVIDER ?? "").trim();
+const usesVindi = paymentProvider === "vindi";
+if (usesVindi) {
+  required.push(
+    "NEXT_PUBLIC_PAYMENT_PROVIDER", "NEXT_PUBLIC_VINDI_API_BASE_URL", "VINDI_API_BASE_URL", "VINDI_API_KEY", "VINDI_WEBHOOK_SECRET",
+    "VINDI_PLAN_ID_BASICO", "VINDI_PLAN_ID_PRO", "VINDI_PLAN_ID_ENTERPRISE",
+  );
+} else {
+  required.push("PAGBANK_API_KEY", "PAGBANK_BASE_URL", "PAGBANK_WEBHOOK_SECRET");
+}
 for (const key of required) if (!process.env[key]?.trim()) errors.push(`${key} está ausente ou vazio.`);
 
 const developmentValue = (value = "") =>
   /changeme|placeholder|example|devpassword|dummy|not-for-production|^test(?:-|$)/i.test(value);
-for (const key of ["AUTH_SECRET", "PLATFORM_ADMIN_SESSION_SECRET", "PAGBANK_WEBHOOK_SECRET"]) {
+for (const key of ["AUTH_SECRET", "PLATFORM_ADMIN_SESSION_SECRET", usesVindi ? "VINDI_WEBHOOK_SECRET" : "PAGBANK_WEBHOOK_SECRET"]) {
   const value = process.env[key] ?? "";
   if (value && (value.length < 32 || developmentValue(value))) {
     errors.push(`${key} deve ser exclusivo de produção e ter pelo menos 32 caracteres.`);
@@ -49,6 +60,30 @@ if (authUrl && domain) {
       errors.push("AUTH_URL deve ser a origem HTTPS pública correspondente a DOMAIN.");
     }
   } catch { errors.push("AUTH_URL não é uma URL válida."); }
+}
+
+if (usesVindi) {
+  if (process.env.NEXT_PUBLIC_PAYMENT_PROVIDER && process.env.NEXT_PUBLIC_PAYMENT_PROVIDER !== "vindi") {
+    errors.push("NEXT_PUBLIC_PAYMENT_PROVIDER deve ser \"vindi\" quando PAYMENT_PROVIDER=vindi.");
+  }
+  const vindiUrl = process.env.VINDI_API_BASE_URL ?? "";
+  if (vindiUrl && vindiUrl.replace(/\/$/, "") !== "https://app.vindi.com.br/api/v1") {
+    errors.push("VINDI_API_BASE_URL deve ser https://app.vindi.com.br/api/v1 (produção), nunca o sandbox.");
+  }
+  const publicVindiUrl = process.env.NEXT_PUBLIC_VINDI_API_BASE_URL ?? "";
+  if (/sandbox/i.test(publicVindiUrl)) {
+    errors.push("NEXT_PUBLIC_VINDI_API_BASE_URL aponta para o sandbox da Vindi; use https://app.vindi.com.br/api/v1.");
+  }
+  if (process.env.VINDI_API_KEY && developmentValue(process.env.VINDI_API_KEY)) {
+    errors.push("VINDI_API_KEY parece ser uma credencial de teste/desenvolvimento.");
+  }
+  for (const key of ["VINDI_PLAN_ID_BASICO", "VINDI_PLAN_ID_PRO", "VINDI_PLAN_ID_ENTERPRISE"]) {
+    const value = process.env[key] ?? "";
+    if (value && !/^\d+$/.test(value)) errors.push(`${key} deve ser o ID numérico do plano na Vindi.`);
+  }
+  if (process.env.RATE_LIMIT_SIGNUP_IP_MAX && Number(process.env.RATE_LIMIT_SIGNUP_IP_MAX) > 20) {
+    errors.push("RATE_LIMIT_SIGNUP_IP_MAX está alto demais para produção (valor de desenvolvimento?).");
+  }
 }
 
 if (process.env.PAGBANK_API_KEY && developmentValue(process.env.PAGBANK_API_KEY)) {

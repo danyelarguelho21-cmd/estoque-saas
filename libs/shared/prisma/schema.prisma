@@ -59,6 +59,17 @@ model Tenant {
   consolidatedStock          Boolean  @default(false) @map("consolidated_stock")
   perishableTrackingEnabled  Boolean  @default(false) @map("perishable_tracking_enabled")
   status                     String   @default("active")
+  // Endereço de cobrança — o gateway Pix da Vindi recusa a transação de cliente sem endereço
+  // (logradouro, número, CEP, cidade e UF). Nullable só por causa dos tenants criados antes desta
+  // coluna existir; o signup novo sempre preenche (SignupSchema) e /assinatura pede o endereço
+  // aos antigos antes de gerar o Pix. zipcode: 8 dígitos sem máscara; state: UF em 2 letras.
+  billingZipcode             String?  @map("billing_zipcode")
+  billingStreet              String?  @map("billing_street")
+  billingNumber              String?  @map("billing_number")
+  billingComplement          String?  @map("billing_complement")
+  billingNeighborhood        String?  @map("billing_neighborhood")
+  billingCity                String?  @map("billing_city")
+  billingState               String?  @map("billing_state")
   createdAt                  DateTime @default(now()) @map("created_at")
 
   users         User[]

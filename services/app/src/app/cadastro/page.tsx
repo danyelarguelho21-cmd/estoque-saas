@@ -11,11 +11,13 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { PlanCard } from "@/components/features/plan-card";
+import { BillingAddressFields, type BillingAddressErrors } from "@/components/features/billing-address-fields";
 import { PageSpinner } from "@/components/ui/spinner";
 import { billingApi } from "@/lib/api/billing";
 import { authApi } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { cnpjMask, cpfMask, isValidCnpj, isValidCpf } from "@/lib/format";
+import { EMPTY_BILLING_ADDRESS, validateBillingAddress, type BillingAddressInput } from "@/lib/billing-address";
 import { PagBankNotLoadedError, tokenizeCard } from "@/lib/payments/pagbank";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +49,8 @@ function SignupPageInner() {
   const [adminName, setAdminName] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [billingAddress, setBillingAddress] = useState<BillingAddressInput>(EMPTY_BILLING_ADDRESS);
+  const [billingAddressErrors, setBillingAddressErrors] = useState<BillingAddressErrors>({});
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix_boleto");
   const [cardNumber, setCardNumber] = useState("");
@@ -72,12 +76,19 @@ function SignupPageInner() {
       );
       return;
     }
+    const address = validateBillingAddress(billingAddress);
+    if (!address.ok) {
+      setBillingAddressErrors(address.errors);
+      setError("Confira o endereço de cobrança — ele é exigido para gerar o Pix da assinatura.");
+      return;
+    }
+    setBillingAddressErrors({});
     setSubmitting(true);
     try {
       await authApi.signup(
         personType === "PJ"
-          ? { personType: "PJ", companyName, cnpj, adminName, adminEmail, password, planId: selectedPlanId }
-          : { personType: "PF", companyName, cpf, adminName, adminEmail, password, planId: selectedPlanId },
+          ? { personType: "PJ", companyName, cnpj, adminName, adminEmail, password, planId: selectedPlanId, billingAddress: address.data }
+          : { personType: "PF", companyName, cpf, adminName, adminEmail, password, planId: selectedPlanId, billingAddress: address.data },
       );
       try {
         await authApi.login({ email: adminEmail, password });
@@ -95,6 +106,8 @@ function SignupPageInner() {
             ? "CNPJ ou e-mail já cadastrado. Tente entrar ou use outros dados."
             : "CPF ou e-mail já cadastrado. Tente entrar ou use outros dados.",
         );
+      } else if (err instanceof ApiError && err.status === 422) {
+        setError("Alguns dados não foram aceitos. Confira CNPJ/CPF, e-mail e o endereço de cobrança.");
       } else {
         setError("Não foi possível criar sua empresa agora. Tente novamente em instantes.");
       }
@@ -134,7 +147,9 @@ function SignupPageInner() {
           "O checkout por cartão (PagBank.js) ainda não está carregado neste ambiente. Escolha Pix/Boleto para concluir agora, ou tente cartão novamente mais tarde.",
         );
       } else if (err instanceof ApiError && err.status === 402) {
-        setError("Pagamento recusado pela operadora. Verifique os dados do cartão ou escolha Pix/Boleto.");
+        setError(err.message || (paymentMethod === "card"
+          ? "Pagamento recusado. Verifique os dados do cartão ou escolha Pix/Boleto."
+          : "A Vindi não conseguiu gerar a cobrança. Confira a configuração e tente novamente."));
       } else if (err instanceof ApiError) {
         setError(err.message);
       } else if (err instanceof Error) {
@@ -256,6 +271,12 @@ function SignupPageInner() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </Field>
+          </div>
+
+          <div>
+            <p className="mb-1 text-sm font-medium text-slate-900">Endereço de cobrança</p>
+            <p className="mb-3 text-xs text-[var(--color-muted)]">Usado na fatura da assinatura (obrigatório para pagamento via Pix).</p>
+            <BillingAddressFields value={billingAddress} onChange={setBillingAddress} errors={billingAddressErrors} />
           </div>
 
           <Button type="submit" loading={submitting} className="w-full">

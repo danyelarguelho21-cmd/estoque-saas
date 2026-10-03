@@ -55,6 +55,15 @@ const PAYMENT_EXEMPT_PAGE_PREFIXES = ["/assinatura"]; // must stay reachable to 
 export default auth(async (req) => {
   const { pathname } = req.nextUrl;
 
+  // 0) Raiz: visitante vê a página comercial estática (public/site/index.html, servida via
+  // rewrite para manter a URL "/"); usuário logado vai direto para o painel, como antes.
+  if (pathname === "/") {
+    if (req.auth) {
+      return NextResponse.redirect(new URL("/painel", req.url));
+    }
+    return NextResponse.rewrite(new URL("/site/index.html", req.url));
+  }
+
   // 1) API routes — 401 JSON, nunca redirect (o cliente é código, não um navegador com usuário).
   if (pathname.startsWith("/api/")) {
     if (PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
@@ -102,6 +111,7 @@ export default auth(async (req) => {
 
 export const config = {
   matcher: [
+    "/",
     "/api/:path*",
     "/painel/:path*",
     "/produtos/:path*",

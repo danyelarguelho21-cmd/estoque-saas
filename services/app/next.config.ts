@@ -45,13 +45,23 @@ const nextConfig: NextConfig = {
     //   `style` attribute — both would be silently blocked (broken hydration / unstyled content)
     //   under a stricter policy. No nonce plumbing exists in this app yet; adding one is a larger
     //   change than "add security headers without breaking flows" calls for.
-    // - connect-src/img-src/frame-src stay 'self'-only: confirmed (reading layout.tsx,
-    //   assinatura/page.tsx, lib/payments/pagbank.ts) there is no PagBank.js script tag, no
-    //   PagBank-hosted image, and no checkout iframe anywhere yet — the boleto link is a plain
-    //   external `<a target="_blank">` and the Pix "QR code" is a text label, not an embedded
-    //   image. Fonts are self-hosted via next/font/google. If PagBank.js card tokenization
-    //   (currently an unimplemented stub — pagbank.ts's tokenizeCard) is wired up later, its
-    //   script/frame domains must be added here.
+    // - img-src/frame-src stay 'self'-only: confirmed (reading layout.tsx, assinatura/page.tsx,
+    //   lib/payments/pagbank.ts) there is no PagBank.js script tag, no PagBank-hosted image, and
+    //   no checkout iframe anywhere yet — the boleto link is a plain external `<a
+    //   target="_blank">` and the Pix "QR code" is a text label, not an embedded image. Fonts are
+    //   self-hosted via next/font/google. If PagBank.js card tokenization (currently an
+    //   unimplemented stub — pagbank.ts's tokenizeCard) is wired up later, its script/frame
+    //   domains must be added here.
+    // - connect-src allows sandbox-app.vindi.com.br/app.vindi.com.br in addition to 'self':
+    //   lib/payments/pagbank.ts's tokenizeCard() (Vindi branch) does a direct browser-side fetch
+    //   to Vindi's public payment_profiles endpoint to tokenize the card (PCI: the PAN must never
+    //   touch our backend). A 'self'-only policy silently blocked that fetch ("Failed to fetch"
+    //   in the browser console, with a CSP "connect-src" violation logged right above it) —
+    //   found while testing the credit-card checkout path locally. Both the Sandbox and
+    //   production Vindi hosts are allowlisted so this doesn't break again when
+    //   NEXT_PUBLIC_VINDI_API_BASE_URL switches to production.
+    //   viacep.com.br: o formulário de endereço de cobrança (cadastro e /assinatura) consulta o CEP
+    //   direto do navegador (lib/billing-address.ts#lookupCep) para preencher rua/bairro/cidade/UF.
     // - frame-ancestors 'none' (+ X-Frame-Options: DENY as a legacy fallback for older browsers):
     //   nothing in this app embeds itself in an iframe, so there's no SAMEORIGIN use case to
     //   preserve.
@@ -72,7 +82,7 @@ const nextConfig: NextConfig = {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "font-src 'self' data:",
-      "connect-src 'self'",
+      "connect-src 'self' https://sandbox-app.vindi.com.br https://app.vindi.com.br https://viacep.com.br",
       "frame-src 'none'",
       "frame-ancestors 'none'",
       "object-src 'none'",

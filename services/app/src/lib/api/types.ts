@@ -35,6 +35,14 @@ export interface Tenant {
   consolidatedStock: boolean;
   perishableTrackingEnabled: boolean;
   status: "active" | "suspended" | "canceled";
+  // Endereço de cobrança — null em tenants criados antes da coleta (ver /assinatura).
+  billingZipcode: string | null;
+  billingStreet: string | null;
+  billingNumber: string | null;
+  billingComplement: string | null;
+  billingNeighborhood: string | null;
+  billingCity: string | null;
+  billingState: string | null;
 }
 
 export interface StoreInput {

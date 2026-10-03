@@ -1,3 +1,4 @@
+import type { BillingAddressInput } from "@/lib/billing-address";
 import { api } from "./client";
 
 /**
@@ -13,6 +14,7 @@ export type SignupInput =
       adminEmail: string;
       password: string;
       planId: string;
+      billingAddress: BillingAddressInput;
     }
   | {
       personType: "PF";
@@ -22,6 +24,7 @@ export type SignupInput =
       adminEmail: string;
       password: string;
       planId: string;
+      billingAddress: BillingAddressInput;
     };
 
 export interface SignupResult {

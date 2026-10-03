@@ -12,7 +12,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { generateValidCnpj } from "../fixtures/cnpj";
 import { adminClient, randomSuffix, resetTestDatabase, seedPlan, seedStore, seedTenant, seedUser } from "../fixtures/db-test-helpers";
 import { makeAuthenticityToken, makeRawChargePaidPayload } from "../fixtures/factories/pagbank-webhook.factory";
-import { ApiClient, signUpAndLogin } from "../fixtures/http-test-client";
+import { ApiClient, TEST_BILLING_ADDRESS, signUpAndLogin } from "../fixtures/http-test-client";
 
 async function loginAs(email: string, password: string) {
   const client = new ApiClient();
@@ -128,6 +128,7 @@ describe("RBAC — role-scoped access control (AC-005)", () => {
       adminEmail: email,
       password,
       planId,
+      billingAddress: TEST_BILLING_ADDRESS,
     });
     expect(signupRes.status).toBe(201);
     const loginRes = await client.post("/api/auth/login", { email, password });

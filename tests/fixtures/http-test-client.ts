@@ -142,6 +142,17 @@ export class ApiClient {
  * goes through) rather than reaching around it — keeping the fixture's promise ("close to the
  * real onboarding contract") true post-fix. Tests that specifically need a pending_payment tenant
  * (the gate itself) build one manually instead — see tests/integration/rbac.test.ts. */
+// Endereço de cobrança obrigatório no signup (SignupSchema) — exigido pelo Pix da Vindi.
+export const TEST_BILLING_ADDRESS = {
+  zipcode: "01310100",
+  street: "Avenida Paulista",
+  number: "1000",
+  complement: "",
+  neighborhood: "Bela Vista",
+  city: "São Paulo",
+  state: "SP",
+};
+
 export async function signUpAndLogin(
   planId: string,
   overrides: Partial<{ companyName: string; cnpj: string; adminName: string; adminEmail: string; password: string }> = {},
@@ -157,6 +168,7 @@ export async function signUpAndLogin(
     adminEmail: email,
     password,
     planId,
+    billingAddress: TEST_BILLING_ADDRESS,
   });
   if (signupRes.status !== 201) {
     throw new Error(`signup failed: ${signupRes.status} ${JSON.stringify(signupRes.body)}`);

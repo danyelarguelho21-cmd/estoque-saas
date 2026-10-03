@@ -1,10 +1,12 @@
 import { api, buildQuery } from "./client";
+import type { BillingAddressInput } from "@/lib/billing-address";
 import type { Paginated, Role, Store, StoreInput, Tenant, UserSummary } from "./types";
 
 export const tenantsApi = {
   getTenant: () => api.get<Tenant>("/api/tenant"),
   updateTenant: (input: Partial<Pick<Tenant, "consolidatedStock" | "perishableTrackingEnabled">>) =>
     api.patch<void>("/api/tenant", input),
+  updateBillingAddress: (input: BillingAddressInput) => api.put<Tenant>("/api/tenant/billing-address", input),
 
   listStores: (params: { cursor?: string | undefined; limit?: number | undefined } = {}) =>
     api.get<Paginated<Store>>(`/api/stores${buildQuery(params)}`),

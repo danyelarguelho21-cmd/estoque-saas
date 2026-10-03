@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { ConflictError, NotFoundError, escapeHtml, platformPrisma, sendTransactionalEmail, withTenant } from "@estoque-saas/shared";
+import { ConflictError, NotFoundError, escapeHtml, platformPrisma, sendTransactionalEmail, withTenant, type BillingAddress } from "@estoque-saas/shared";
 import { Prisma } from "@prisma/client";
 import { hashPassword } from "./password";
+import { billingAddressToTenantData } from "./tenant";
 
 export interface SignupInput {
   companyName: string;
@@ -12,6 +13,7 @@ export interface SignupInput {
   adminEmail: string;
   password: string;
   planId: string;
+  billingAddress: BillingAddress;
 }
 
 export interface SignupResult {
@@ -46,6 +48,7 @@ export async function signupTenant(input: SignupInput): Promise<SignupResult> {
           cnpj: input.cnpj,
           cpf: input.cpf,
           planId: input.planId,
+          ...billingAddressToTenantData(input.billingAddress),
         },
       });
       await tx.user.create({

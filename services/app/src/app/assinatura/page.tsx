@@ -13,8 +13,12 @@ import { PageSpinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PlanCard } from "@/components/features/plan-card";
 import { RoleGate } from "@/components/features/role-gate";
+import { BillingAddressFields, type BillingAddressErrors } from "@/components/features/billing-address-fields";
 import { useToast } from "@/components/ui/toast";
 import { billingApi } from "@/lib/api/billing";
+import { tenantsApi } from "@/lib/api/tenants";
+import type { Tenant } from "@/lib/api/types";
+import { EMPTY_BILLING_ADDRESS, validateBillingAddress, type BillingAddressInput } from "@/lib/billing-address";
 import { ApiError } from "@/lib/api/client";
 import { formatCentsToBRL, formatDateBR } from "@/lib/format";
 
@@ -33,6 +37,10 @@ const INVOICE_STATUS_LABEL: Record<string, string> = {
   overdue: "Vencida",
 };
 
+function hasBillingAddress(tenant: Tenant): boolean {
+  return Boolean(tenant.billingZipcode && tenant.billingStreet && tenant.billingNumber && tenant.billingCity && tenant.billingState);
+}
+
 export default function SubscriptionPage() {
   const queryClient = useQueryClient();
   const { notify } = useToast();
@@ -43,6 +51,7 @@ export default function SubscriptionPage() {
       query.state.data?.status === "pending_payment" || query.state.data?.status === "past_due" ? 5000 : false,
   });
   const plansQuery = useQuery({ queryKey: ["plans"], queryFn: billingApi.listPlans });
+  const tenantQuery = useQuery({ queryKey: ["tenant"], queryFn: tenantsApi.getTenant });
   const invoicesQuery = useQuery({
     queryKey: ["invoices"],
     queryFn: () => billingApi.listInvoices({ limit: 20 }),
@@ -54,8 +63,17 @@ export default function SubscriptionPage() {
   const [copiedInvoiceId, setCopiedInvoiceId] = useState<string | null>(null);
   const [retryingCheckout, setRetryingCheckout] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [billingAddress, setBillingAddress] = useState<BillingAddressInput>(EMPTY_BILLING_ADDRESS);
+  const [billingAddressErrors, setBillingAddressErrors] = useState<BillingAddressErrors>({});
 
-  const pendingInvoice = invoicesQuery.data?.items.find((invoice) => invoice.status !== "paid");
+  const pendingInvoice = invoicesQuery.data?.items.find((invoice) => invoice.status === "pending" || invoice.status === "overdue");
+  // Tenants criados antes da coleta de endereço: o Pix da Vindi é recusado sem ele, então o
+  // endereço é pedido aqui antes de gerar a cobrança.
+  const needsBillingAddress = tenantQuery.data ? !hasBillingAddress(tenantQuery.data) : false;
+  // Fatura aberta sem QR Code (ex.: recusada pelo gateway por falta de endereço) também precisa de
+  // uma nova cobrança — o backend substitui a assinatura pendente na Vindi.
+  const pendingInvoiceWithoutPix = pendingInvoice?.paymentMethod === "pix" && !pendingInvoice.pixQrCode;
+  const canGeneratePix = subscriptionQuery.data?.status === "pending_payment" && (!pendingInvoice || pendingInvoiceWithoutPix);
 
   async function retryPixCheckout() {
     const planId = subscriptionQuery.data?.planId;
@@ -63,8 +81,19 @@ export default function SubscriptionPage() {
     setRetryingCheckout(true);
     setCheckoutError(null);
     try {
+      if (needsBillingAddress) {
+        const address = validateBillingAddress(billingAddress);
+        if (!address.ok) {
+          setBillingAddressErrors(address.errors);
+          setCheckoutError("Confira o endereço de cobrança antes de gerar o Pix.");
+          return;
+        }
+        setBillingAddressErrors({});
+        const tenant = await tenantsApi.updateBillingAddress(address.data);
+        queryClient.setQueryData(["tenant"], tenant);
+      }
       const checkout = await billingApi.createSubscription({ planId, paymentMethod: "pix_boleto" });
-      if (!checkout.invoice?.pixQrCode) {
+      if (!checkout.invoice?.pixQrCode && !checkout.invoice?.boletoUrl) {
         throw new Error("A cobrança foi solicitada, mas a Vindi não retornou o QR Code nem o link da fatura. Tente novamente em instantes.");
       }
       await Promise.all([
@@ -171,6 +200,7 @@ export default function SubscriptionPage() {
                 <CardContent className="grid gap-5 sm:grid-cols-[220px_1fr]">
                   <div className="flex min-h-52 items-center justify-center rounded-lg bg-white p-3">
                     {invoice.pixQrCodeImageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- PNG gerado na rota autenticada pix-qr (no-store); next/image não agrega nada aqui
                       <img src={`/api/billing/invoices/${invoice.id}/pix-qr`} alt="QR Code Pix para pagar a assinatura" width={196} height={196} />
                     ) : <p className="max-w-44 text-center text-sm text-[var(--color-muted)]">Use o código Pix ao lado para pagar pelo aplicativo do seu banco.</p>}
                   </div>
@@ -187,13 +217,24 @@ export default function SubscriptionPage() {
               </Card>
             ))}
 
-          {subscriptionQuery.data?.status === "pending_payment" && !pendingInvoice && (
+          {canGeneratePix && (
             <Card>
               <CardContent className="flex flex-col items-start gap-3 pt-6">
-                <p className="text-sm text-[var(--color-muted)]">Ainda não há cobrança Pix disponível para esta assinatura.</p>
+                <p className="text-sm text-[var(--color-muted)]">
+                  {pendingInvoiceWithoutPix
+                    ? "A fatura em aberto não tem QR Code Pix. Gere uma nova cobrança para pagar via Pix."
+                    : "Ainda não há cobrança Pix disponível para esta assinatura."}
+                </p>
+                {needsBillingAddress && (
+                  <div className="w-full">
+                    <p className="mb-1 text-sm font-medium text-slate-900">Endereço de cobrança</p>
+                    <p className="mb-3 text-xs text-[var(--color-muted)]">Obrigatório para gerar o Pix da assinatura.</p>
+                    <BillingAddressFields value={billingAddress} onChange={setBillingAddress} errors={billingAddressErrors} idPrefix="assinatura-billing" />
+                  </div>
+                )}
                 {checkoutError && <Alert variant="danger">{checkoutError}</Alert>}
-                <Button type="button" loading={retryingCheckout} onClick={() => void retryPixCheckout()}>
-                  Gerar cobrança Pix
+                <Button type="button" loading={retryingCheckout} disabled={tenantQuery.isLoading} onClick={() => void retryPixCheckout()}>
+                  {needsBillingAddress ? "Salvar endereço e gerar cobrança Pix" : pendingInvoiceWithoutPix ? "Gerar nova cobrança Pix" : "Gerar cobrança Pix"}
                 </Button>
               </CardContent>
             </Card>

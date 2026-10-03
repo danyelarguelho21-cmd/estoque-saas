@@ -25,6 +25,15 @@ export class SignupPage {
     await this.page.getByLabel("Seu nome").fill(input.adminName);
     await this.page.getByLabel("Seu e-mail").fill(input.adminEmail);
     await this.page.getByLabel("Senha").fill(input.password);
+    // Endereço de cobrança (obrigatório). CEP inexistente de propósito: o ViaCEP responde "erro" e
+    // não sobrescreve os campos preenchidos abaixo — o teste não depende do conteúdo do ViaCEP.
+    await this.page.getByLabel("CEP").fill("99999999");
+    await this.page.getByLabel("Rua").fill("Avenida Paulista");
+    await this.page.getByLabel("Número").fill("1000");
+    await this.page.getByLabel("Bairro").fill("Bela Vista");
+    await this.page.getByLabel("Cidade").fill("São Paulo");
+    await this.page.getByRole("combobox", { name: "UF" }).click();
+    await this.page.getByRole("option", { name: "SP", exact: true }).click();
   }
 
   /** Selects a plan card. `planName` is matched case-insensitively against the plan's displayed

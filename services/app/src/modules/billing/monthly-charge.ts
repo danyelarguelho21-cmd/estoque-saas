@@ -1,4 +1,4 @@
-import { listActiveTenantIds, lockOnKey, platformPrisma, recordAudit, withTenant } from "@estoque-saas/shared";
+import { listActiveTenantIds, lockOnKey, platformPrisma, recordAudit, tenantBillingAddress, withTenant } from "@estoque-saas/shared";
 import { getPaymentProvider } from "./provider";
 
 // Processor do job `generate-monthly-charge` (worker) — sequence-billing.md: para tenants com
@@ -117,6 +117,7 @@ async function generateChargeForTenant(tenantId: string): Promise<boolean> {
       throw new Error(`Tenant ${tenantId} sem CNPJ e sem CPF cadastrado — não é possível cobrar.`);
     }
 
+    const billingAddress = tenantBillingAddress(tenant);
     const provider = getPaymentProvider();
     const charge = await provider.createOneOffCharge({
       tenantId,
@@ -127,6 +128,7 @@ async function generateChargeForTenant(tenantId: string): Promise<boolean> {
       customerEmail,
       customerName: tenant.name,
       customerTaxId,
+      ...(billingAddress ? { billingAddress } : {}),
     });
     if (!charge.gatewayChargeId || !charge.pixQrCode) {
       throw new Error("PagBank criou o pedido sem retornar o identificador da cobrança e o código Pix.");

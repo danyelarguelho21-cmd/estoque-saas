@@ -1,5 +1,6 @@
 import { UnauthorizedError, platformPrisma, recordAudit, sendTransactionalEmail, withTenant } from "@estoque-saas/shared";
 import { getPagBankProvider, getPaymentProvider } from "./provider";
+import { resolveInvoiceAmount } from "./invoice-amount";
 import { VindiProvider } from "@estoque-saas/shared";
 
 interface GatewayRefLookupRow {
@@ -73,7 +74,7 @@ async function processVerifiedWebhook(rawBody: string, provider: VindiProvider |
   }
   console.log(`[webhook-pagbank] recebido, assinatura válida: type=${event.type}`);
 
-  const chargeId = event.type === "charge.paid" || event.type === "charge.failed" || event.type === "charge.created" ? event.gatewayChargeId : null;
+  const chargeId = event.type === "charge.paid" || event.type === "charge.failed" || event.type === "charge.created" || event.type === "charge.pix_updated" ? event.gatewayChargeId : null;
   const subscriptionId = event.type === "subscription.canceled" ? event.gatewaySubscriptionId : null;
   const relatedSubscriptionId = event.type === "charge.created" ? event.gatewaySubscriptionId : subscriptionId;
 
@@ -104,12 +105,38 @@ async function processVerifiedWebhook(rawBody: string, provider: VindiProvider |
   const paymentConfirmationEmail = await withTenant(match.tenant_id, async (tx): Promise<PaymentConfirmationEmailData | null> => {
     if (event.type === "charge.created" && match.subscription_id) {
       const existing = await tx.invoice.findFirst({ where: { gatewayChargeId: event.gatewayChargeId } });
-      if (existing) return null;
+      if (existing) {
+        // Fatura já criada pelo checkout: completa o QR (se a transação Pix ainda não tinha
+        // concluído) e alinha o valor ao que a Vindi informa na fatura (bill.amount).
+        const fillQr = !existing.pixQrCode && event.pixQrCode;
+        const fixAmount = event.amountCents !== undefined && event.amountCents !== existing.amountCents;
+        if (fixAmount) {
+          console.warn(`[webhook-vindi] bill_created tenant=${match.tenant_id} invoice=${existing.id} — valor local ${existing.amountCents} difere do valor da Vindi ${event.amountCents} (centavos); usando o da Vindi.`);
+        }
+        if (fillQr || fixAmount) {
+          await tx.invoice.update({
+            where: { id: existing.id },
+            data: { ...(fillQr ? { pixQrCode: event.pixQrCode } : {}), ...(fixAmount ? { amountCents: event.amountCents } : {}) },
+          });
+          console.log(`[webhook-vindi] bill_created tenant=${match.tenant_id} invoice=${existing.id} — fatura atualizada (${[fillQr && "QR Code Pix", fixAmount && "valor"].filter(Boolean).join(", ")})`);
+        }
+        return null;
+      }
+      const subscription = await tx.subscription.findUnique({ where: { id: match.subscription_id }, select: { planId: true } });
+      const plan = subscription ? await tx.plan.findUnique({ where: { id: subscription.planId }, select: { priceCents: true } }) : null;
+      // Sem bill.amount nem plano não há valor confiável — falha para a Vindi reentregar, em vez
+      // de gravar uma fatura de R$ 0,00.
+      if (event.amountCents === undefined && !plan) {
+        throw new Error(`Vindi bill_created ${event.gatewayChargeId} sem valor e sem plano local para usar como referência.`);
+      }
+      const amountCents = plan
+        ? resolveInvoiceAmount(event, plan.priceCents, `tenant=${match.tenant_id} webhook bill_created ${event.gatewayChargeId}`)
+        : event.amountCents!;
       const invoice = await tx.invoice.create({
         data: {
           tenantId: match.tenant_id,
           subscriptionId: match.subscription_id,
-          amountCents: event.amountCents,
+          amountCents,
           status: "pending",
           dueDate: new Date(event.dueDate),
           paymentMethod: event.paymentMethod,
@@ -121,6 +148,22 @@ async function processVerifiedWebhook(rawBody: string, provider: VindiProvider |
       });
       await recordAudit(tx, { tenantId: match.tenant_id, userId: null, entityType: "invoice", entityId: invoice.id, action: "create", after: { status: "pending", amountCents: invoice.amountCents } });
       console.log(`[webhook-vindi] bill_created tenant=${match.tenant_id} invoice=${invoice.id} subscription=${match.subscription_id}`);
+      return null;
+    }
+
+    // QR Code Pix que chegou depois da fatura (Vindi charge_created/charge_updated). Só preenche o
+    // copia-e-cola de fatura ainda em aberto; não mexe em status. Idempotente: reentregas com o
+    // mesmo código não alteram nada.
+    if (event.type === "charge.pix_updated" && match.invoice_id) {
+      const updated = await tx.invoice.updateMany({
+        where: {
+          id: match.invoice_id,
+          status: { in: ["pending", "overdue"] },
+          OR: [{ pixQrCode: null }, { pixQrCode: { not: event.pixQrCode } }],
+        },
+        data: { pixQrCode: event.pixQrCode, ...(event.paymentUrl ? { boletoUrl: event.paymentUrl } : {}) },
+      });
+      console.log(`[webhook-vindi] charge.pix_updated tenant=${match.tenant_id} invoice=${match.invoice_id} — ${updated.count ? "QR Code Pix atualizado" : "sem alteração"}`);
       return null;
     }
 

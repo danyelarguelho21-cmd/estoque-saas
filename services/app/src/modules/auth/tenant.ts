@@ -1,4 +1,40 @@
-import { recordAudit, withTenant } from "@estoque-saas/shared";
+import { recordAudit, withTenant, type BillingAddress, type TenantAddressColumns } from "@estoque-saas/shared";
+
+// Mapeia o endereço de cobrança (formato do provider de pagamento) para as colunas Tenant.billing*.
+export function billingAddressToTenantData(address: BillingAddress) {
+  return {
+    billingZipcode: address.zipcode.replace(/\D/g, ""),
+    billingStreet: address.street,
+    billingNumber: address.number,
+    billingComplement: address.complement || null,
+    billingNeighborhood: address.neighborhood || null,
+    billingCity: address.city,
+    billingState: address.state.toUpperCase(),
+  };
+}
+
+function pickBillingColumns(tenant: TenantAddressColumns) {
+  const { billingZipcode, billingStreet, billingNumber, billingComplement, billingNeighborhood, billingCity, billingState } = tenant;
+  return { billingZipcode, billingStreet, billingNumber, billingComplement, billingNeighborhood, billingCity, billingState };
+}
+
+// PUT /api/tenant/billing-address — só admin (requireRole("tenant:manage") na rota); auditado.
+export async function updateTenantBillingAddress(tenantId: string, userId: string, address: BillingAddress) {
+  return withTenant(tenantId, async (tx) => {
+    const before = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+    const updated = await tx.tenant.update({ where: { id: tenantId }, data: billingAddressToTenantData(address) });
+    await recordAudit(tx, {
+      tenantId,
+      userId,
+      entityType: "tenant",
+      entityId: tenantId,
+      action: "update",
+      before: pickBillingColumns(before),
+      after: pickBillingColumns(updated),
+    });
+    return updated;
+  });
+}
 
 // api/openapi/tenants.yaml#getTenant / #updateTenant — tenant é RLS-scoped (usa a própria coluna
 // id, ver ADR-002), então withTenant() funciona normalmente aqui apesar de ser "a própria linha".

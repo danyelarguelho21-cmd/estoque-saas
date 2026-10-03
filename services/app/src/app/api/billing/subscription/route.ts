@@ -2,7 +2,7 @@ import { Queue } from "bullmq";
 import { z } from "zod";
 import { DEFAULT_JOB_OPTIONS, QUEUE_NAMES, redisConnectionOptions, type GenerateMonthlyChargeJobData } from "@estoque-saas/shared";
 import { requireRole } from "@/modules/auth";
-import { createOrGetInitialInvoice, createSubscription, getSubscription } from "@/modules/billing";
+import { createOrGetInitialInvoice, createSubscription, getSubscription, toInvoiceResponse } from "@/modules/billing";
 import { PaymentUnavailableError } from "@estoque-saas/shared";
 import { created, handleRoute, ok, parseJsonBody } from "@/lib/http";
 
@@ -71,6 +71,6 @@ export async function POST(req: Request): Promise<Response> {
       }
     }
 
-    return created({ subscription, invoice });
+    return created({ subscription, invoice: invoice ? toInvoiceResponse(invoice) : null });
   });
 }
