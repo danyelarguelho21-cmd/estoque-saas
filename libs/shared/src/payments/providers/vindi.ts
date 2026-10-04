@@ -82,7 +82,7 @@ export class VindiProvider implements PaymentProvider {
       payment_method_code: "credit_card",
     });
     if (!profile.gateway_token) throw new Error("Vindi não confirmou o perfil de pagamento do cartão.");
-    const result = await this.createSubscription(input.gatewayPlanId, customerId, "credit_card", profile.gateway_token, input.tenantId);
+    const result = await this.createSubscription(input.gatewayPlanId, customerId, "credit_card", profile.gateway_token);
     await this.assertInitialCharge(result);
     return { ...result, gatewayCustomerId: String(customerId) };
   }
@@ -94,7 +94,7 @@ export class VindiProvider implements PaymentProvider {
       throw new Error("A Vindi exige o endereço de cobrança do cliente para gerar o Pix.");
     }
     const customerId = await this.getOrCreateCustomer({ tenantId: input.tenantId, name: input.customerName, email: input.customerEmail, registryCode: input.customerTaxId, address: input.billingAddress });
-    const result = await this.createSubscription(input.gatewayPlanId, customerId, "pix", undefined, input.tenantId);
+    const result = await this.createSubscription(input.gatewayPlanId, customerId, "pix", undefined);
     await this.waitForPixQrCode(result);
     await this.assertInitialCharge(result);
     return { ...result, gatewayCustomerId: String(customerId) };
@@ -206,13 +206,18 @@ export class VindiProvider implements PaymentProvider {
     return { type: "ignored", gatewayEventId: eventId };
   }
 
-  private async getOrCreateCustomer(input: CustomerInput): Promise<number> {
-    const query = new URLSearchParams({ query: `code=${input.tenantId}`, per_page: "1" });
-    // GET /customers responde { customers: [...] } (o código antigo lia como array puro, nunca
-    // achava o cliente e criava um novo a cada tentativa). Confere o `code` devolvido: se a busca
-    // fosse ignorada, o primeiro cliente da conta (de outro tenant) seria atualizado e cobrado.
+  // Busca o cliente Vindi deste tenant pelo `code`. A sintaxe de busca da Vindi é `campo:valor`
+  // (a forma `code=...` era ignorada em produção e devolvia outros clientes). Confere o `code`
+  // devolvido: se a busca fosse ignorada, o primeiro cliente da conta (de outro tenant) nunca é
+  // reaproveitado. GET /customers responde { customers: [...] }.
+  private async findCustomerIdByCode(tenantId: string, syntax: ":" | "=" = ":"): Promise<number | undefined> {
+    const query = new URLSearchParams({ query: `code${syntax}${tenantId}`, per_page: "25" });
     const existing = await this.request<{ customers?: Array<{ id?: number; code?: string | null }> } | Array<{ id?: number; code?: string | null }>>(`/customers?${query}`, "GET");
-    const existingId = (Array.isArray(existing) ? existing : existing.customers ?? []).find((customer) => customer.code === input.tenantId)?.id;
+    return (Array.isArray(existing) ? existing : existing.customers ?? []).find((customer) => customer.code === tenantId)?.id;
+  }
+
+  private async getOrCreateCustomer(input: CustomerInput): Promise<number> {
+    const existingId = await this.findCustomerIdByCode(input.tenantId);
     if (existingId) {
       // Cliente criado antes de o Zolo coletar endereço (ou com endereço antigo): atualiza antes
       // de criar a assinatura, senão o gateway Pix recusa a transação da nova fatura.
@@ -221,24 +226,41 @@ export class VindiProvider implements PaymentProvider {
       }
       return existingId;
     }
-    const response = await this.request<{ customer?: { id?: number }; id?: number }>("/customers", "POST", {
-      name: input.name,
-      email: input.email,
-      registry_code: input.registryCode.replace(/\D/g, ""),
-      code: input.tenantId,
-      ...(input.address ? { address: toVindiAddress(input.address) } : {}),
-    });
+    let response: { customer?: { id?: number }; id?: number };
+    try {
+      response = await this.request<{ customer?: { id?: number }; id?: number }>("/customers", "POST", {
+        name: input.name,
+        email: input.email,
+        registry_code: input.registryCode.replace(/\D/g, ""),
+        code: input.tenantId,
+        ...(input.address ? { address: toVindiAddress(input.address) } : {}),
+      });
+    } catch (error) {
+      // "code já está em uso": o cliente deste tenant já existe na Vindi (tentativa anterior), mas a
+      // busca não o encontrou. Tenta a sintaxe alternativa antes de desistir, e atualiza o endereço.
+      const status = (error as { status?: unknown }).status;
+      if (status !== 422) throw error;
+      const retryId = await this.findCustomerIdByCode(input.tenantId, "=");
+      if (!retryId) throw error;
+      if (input.address) {
+        await this.request(`/customers/${encodeURIComponent(String(retryId))}`, "PUT", { address: toVindiAddress(input.address) });
+      }
+      return retryId;
+    }
     const id = response.customer?.id ?? response.id;
     if (!id) throw new Error("Vindi não retornou o ID do cliente cadastrado.");
     return id;
   }
 
-  private async createSubscription(planId: string, customerId: number, method: string, gatewayToken: string | undefined, tenantId: string): Promise<RecurringChargeResult> {
+  private async createSubscription(planId: string, customerId: number, method: string, gatewayToken: string | undefined): Promise<RecurringChargeResult> {
     const body: Record<string, unknown> = {
       plan_id: Number(planId),
       customer_id: customerId,
       payment_method_code: method,
-      code: tenantId,
+      // Sem `code` na assinatura: a Vindi exige que seja único para sempre (inclusive assinaturas
+      // canceladas), o que fazia toda nova tentativa de cobrança do mesmo tenant falhar com 422
+      // "code já está em uso". O vínculo com o tenant fica no cliente (code = tenantId) e no
+      // gatewaySubscriptionId salvo no banco.
       ...(gatewayToken ? { payment_profile: { gateway_token: gatewayToken, payment_method_code: method } } : {}),
     };
     const response = await this.request<{ subscription?: { id?: number; status?: string }; bill?: VindiBill }>("/subscriptions", "POST", body);

@@ -89,7 +89,8 @@ describe("VindiProvider", () => {
       code: "tenant-uuid",
       address: expectedVindiAddress,
     });
-    expect(call(fetchMock, 2).body).toMatchObject({ plan_id: 521747, customer_id: 42, payment_method_code: "pix", code: "tenant-uuid" });
+    expect(call(fetchMock, 2).body).toMatchObject({ plan_id: 521747, customer_id: 42, payment_method_code: "pix" });
+    expect(call(fetchMock, 2).body).not.toHaveProperty("code");
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: `Basic ${Buffer.from("private-test-key:").toString("base64")}` });
   });
 
@@ -122,7 +123,7 @@ describe("VindiProvider", () => {
     const result = await provider.createRecurringPixCharge(pixInput);
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(decodeURIComponent(call(fetchMock, 0).url)).toContain("query=code=tenant-uuid");
+    expect(decodeURIComponent(call(fetchMock, 0).url)).toContain("query=code:tenant-uuid");
     const update = call(fetchMock, 1);
     expect(update.method).toBe("PUT");
     expect(update.url).toMatch(/\/customers\/42$/);
@@ -145,6 +146,23 @@ describe("VindiProvider", () => {
     expect(call(fetchMock, 1).method).toBe("POST");
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/customers/7"))).toBe(false);
     expect(call(fetchMock, 2).body).toMatchObject({ customer_id: 42 });
+  });
+
+  it("reaproveita o cliente quando a Vindi responde 422 'code já está em uso' no cadastro", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ customers: [] }))
+      .mockResolvedValueOnce(json({ errors: [{ id: "invalid_parameter", parameter: "code", message: "já está em uso" }] }, 422))
+      .mockResolvedValueOnce(json({ customers: [{ id: 42, code: "tenant-uuid" }] }))
+      .mockResolvedValueOnce(json({ customer: { id: 42 } }))
+      .mockResolvedValueOnce(subscriptionResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await provider.createRecurringPixCharge(pixInput);
+
+    expect(decodeURIComponent(call(fetchMock, 2).url)).toContain("query=code=tenant-uuid");
+    expect(call(fetchMock, 3).method).toBe("PUT");
+    expect(call(fetchMock, 4).body).toMatchObject({ customer_id: 42 });
+    expect(result.gatewayCustomerId).toBe("42");
   });
 
   it("recusa Pix sem endereço de cobrança antes de criar qualquer coisa na Vindi", async () => {
