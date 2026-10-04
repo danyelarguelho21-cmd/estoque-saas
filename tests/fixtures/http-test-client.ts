@@ -181,7 +181,13 @@ export async function signUpAndLogin(
 
   // billing:manage routes allow pending_payment (see rbac.ts) so this call works pre-payment.
   const checkoutRes = await client.post("/api/billing/subscription", { planId, paymentMethod: "pix_boleto" as const });
-  if (checkoutRes.status !== 201) {
+  // O gateway de teste é propositalmente inalcançável no CI (PAGBANK_BASE_URL=http://127.0.0.1:1),
+  // então o checkout Pix responde 503 PAYMENT_UNAVAILABLE em vez de 201 — mesmo critério de
+  // billing-subscription.test.ts (expectPixCheckoutResponse). A assinatura pending_payment já
+  // existe desde o signup, que é tudo o que o restante deste helper precisa.
+  const checkoutUnavailable =
+    checkoutRes.status === 503 && (checkoutRes.body as { code?: string } | undefined)?.code === "PAYMENT_UNAVAILABLE";
+  if (checkoutRes.status !== 201 && !checkoutUnavailable) {
     throw new Error(`checkout failed: ${checkoutRes.status} ${JSON.stringify(checkoutRes.body)}`);
   }
 
