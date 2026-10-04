@@ -135,9 +135,14 @@ function SignupPageInner() {
         const checkout = await billingApi.createSubscription({ planId: selectedPlanId, paymentMethod: "card", cardToken });
         router.push(checkout.subscription.status === "active" ? "/painel" : "/assinatura");
       } else {
-        const checkout = await billingApi.createSubscription({ planId: selectedPlanId, paymentMethod: "pix_boleto" });
-        if (!checkout.invoice?.pixQrCode && !checkout.invoice?.boletoUrl) {
-          throw new Error("A cobrança foi solicitada, mas a Vindi não retornou o QR Code nem o link da fatura. Tente novamente.");
+        // A conta e a assinatura pending_payment já existem desde o passo 1. Se o gateway falhar ao
+        // gerar o Pix agora, levamos a pessoa para /assinatura mesmo assim — lá ela vê "Aguardando
+        // primeiro pagamento" e o botão "Gerar cobrança Pix" para tentar de novo, em vez de ficar
+        // presa no cadastro com uma conta já criada.
+        try {
+          await billingApi.createSubscription({ planId: selectedPlanId, paymentMethod: "pix_boleto" });
+        } catch (pixErr) {
+          console.error("[cadastro] falha ao gerar a primeira cobrança Pix; seguindo para /assinatura:", pixErr);
         }
         router.push("/assinatura");
       }
