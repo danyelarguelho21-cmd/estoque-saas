@@ -10,11 +10,11 @@ export function TurnoverChart({ data }: { data: TurnoverItem[] }) {
   return (
     <ResponsiveContainer width="100%" height={320}>
       <BarChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 48 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="#dbe4dc" vertical={false} />
         <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} height={60} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => formatNumberBR(v, 1)} />
         <Tooltip formatter={(value) => [formatNumberBR(typeof value === "number" ? value : Number(value), 2), "Giro"]} />
-        <Bar dataKey="turnoverRate" fill="#2563eb" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="turnoverRate" fill="#123c3a" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

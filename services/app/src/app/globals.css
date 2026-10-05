@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* Identidade Zolo (mesma da página inicial em public/site): verde-petróleo #123c3a, amarelo
+   #ece7a2, neutros esverdeados e a fonte Manrope servida localmente (sem Google Fonts no build). */
+@font-face {
+  font-family: "Manrope";
+  src: url("/site/assets/manrope.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 /*
  * Fase 5 — polish. Direção visual: "High Tech" (dashboard denso em dados para SaaS B2B de
  * gestão de estoque) — auto-resolvida sob modo de engajamento Standard porque a ferramenta
@@ -9,32 +19,52 @@
  * alertas de estoque/validade, Inter como tipografia (legibilidade em tabelas densas de dados).
  */
 @theme {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Manrope", var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
 
-  --color-background: #f8fafc;
-  --color-foreground: #0f172a;
-  --color-muted: #64748b;
-  --color-muted-foreground: #94a3b8;
-  --color-border: #e2e8f0;
+  --color-background: #f6f8f4;
+  --color-foreground: #132524;
+  --color-muted: #5f7065;
+  --color-muted-foreground: #8a978d;
+  --color-border: #dbe4dc;
   --color-surface: #ffffff;
 
-  --color-primary: #2563eb;
+  --color-primary: #123c3a;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #0f172a;
+  --color-secondary: #132524;
   --color-secondary-foreground: #ffffff;
+  --color-accent: #ece7a2;
+  --color-accent-foreground: #123c3a;
 
-  --color-success: #16a34a;
-  --color-warning: #d97706;
-  --color-danger: #dc2626;
-  --color-info: #0891b2;
+  --color-success: #2f7d4f;
+  --color-warning: #c27a0e;
+  --color-danger: #c2412d;
+  --color-info: #2e6f73;
+
+  /* Neutros (classes slate-*) e realces (blue-*) remapeados para a paleta Zolo, para que
+     componentes com cores fixas sigam a mesma identidade sem editar cada arquivo. */
+  --color-slate-50: #f6f8f4;
+  --color-slate-100: #eef3ec;
+  --color-slate-200: #dbe4dc;
+  --color-slate-300: #bdccc6;
+  --color-slate-400: #8a978d;
+  --color-slate-500: #6c7b70;
+  --color-slate-600: #576d5e;
+  --color-slate-700: #3d524a;
+  --color-slate-800: #25423d;
+  --color-slate-900: #132524;
+  --color-slate-950: #0b1a19;
+  --color-blue-50: #eef3ec;
+  --color-blue-100: #e3ebdf;
+  --color-blue-600: #123c3a;
+  --color-blue-700: #123c3a;
 
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
 
-  --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.04);
-  --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.08);
+  --shadow-sm: 0 1px 2px 0 rgb(18 60 58 / 0.05);
+  --shadow-md: 0 4px 12px -2px rgb(18 60 58 / 0.10);
 }
 
 @layer base {

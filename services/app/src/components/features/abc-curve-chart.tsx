@@ -15,9 +15,9 @@ import type { AbcCurveItem } from "@/lib/api/types";
 import { formatNumberBR, formatPercent } from "@/lib/format";
 
 const CLASS_COLOR: Record<AbcCurveItem["class"], string> = {
-  A: "#2563eb",
-  B: "#0891b2",
-  C: "#94a3b8",
+  A: "#123c3a",
+  B: "#6e8b4c",
+  C: "#bdccc6",
 };
 
 /** Curva ABC — barras por produto (valor) + linha de percentual acumulado (padrão Pareto). */
@@ -27,7 +27,7 @@ export function AbcCurveChart({ data }: { data: AbcCurveItem[] }) {
   return (
     <ResponsiveContainer width="100%" height={320}>
       <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 48 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="#dbe4dc" vertical={false} />
         <XAxis
           dataKey="productName"
           tick={{ fontSize: 11 }}
@@ -55,7 +55,7 @@ export function AbcCurveChart({ data }: { data: AbcCurveItem[] }) {
             <Cell key={entry.productId} fill={CLASS_COLOR[entry.class]} />
           ))}
         </Bar>
-        <Line yAxisId="pct" type="monotone" dataKey="cumulativePercentage" stroke="#0f172a" strokeWidth={2} dot={false} />
+        <Line yAxisId="pct" type="monotone" dataKey="cumulativePercentage" stroke="#c9a227" strokeWidth={2} dot={false} />
       </ComposedChart>
     </ResponsiveContainer>
   );
