@@ -177,7 +177,15 @@ export default function SubscriptionPage() {
                       Regularize sua fatura para evitar restrição de acesso.
                     </Alert>
                   )}
-                  {(subscriptionQuery.data.status === "pending_payment" || subscriptionQuery.data.status === "trialing") && (
+                  {subscriptionQuery.data.status === "trialing" && subscriptionQuery.data.trialEndsAt && new Date(subscriptionQuery.data.trialEndsAt) > new Date() && (
+                    <Alert variant="info" title="Período de teste liberado">
+                      Você tem acesso completo até {formatDateBR(subscriptionQuery.data.trialEndsAt)}. Depois dessa data, será preciso
+                      pagar a assinatura para continuar usando o sistema.
+                    </Alert>
+                  )}
+                  {(subscriptionQuery.data.status === "pending_payment" ||
+                    (subscriptionQuery.data.status === "trialing" &&
+                      !(subscriptionQuery.data.trialEndsAt && new Date(subscriptionQuery.data.trialEndsAt) > new Date()))) && (
                     <Alert variant="warning" title="Aguardando primeiro pagamento">
                       Pague a fatura abaixo para liberar o acesso completo ao sistema.
                     </Alert>

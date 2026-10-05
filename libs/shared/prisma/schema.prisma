@@ -125,6 +125,8 @@ model Subscription {
   gatewaySubscriptionId  String?   @map("gateway_subscription_id")
   currentPeriodStart     DateTime? @map("current_period_start")
   currentPeriodEnd       DateTime? @map("current_period_end")
+  // Teste liberado manualmente no painel /admin (status "trialing" + data futura = acesso liberado).
+  trialEndsAt            DateTime? @map("trial_ends_at")
   createdAt              DateTime  @default(now()) @map("created_at")
   invoices               Invoice[]
 

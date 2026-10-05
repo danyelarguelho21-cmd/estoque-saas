@@ -51,6 +51,7 @@ MIGRATION_FILES.push(
   path.join(REPO_ROOT, "libs/shared/prisma/migrations/20260925183026_add_person_type_and_cpf/migration.sql"),
   path.join(REPO_ROOT, "libs/shared/prisma/migrations/20260928170000_add_pix_qr_code_image_url/migration.sql"),
   path.join(REPO_ROOT, "libs/shared/prisma/migrations/20261002120000_add_tenant_billing_address/migration.sql"),
+  path.join(REPO_ROOT, "libs/shared/prisma/migrations/20261005120000_add_subscription_trial_ends_at/migration.sql"),
 );
 
 // GUARD (root-cause fix, found via manual e2e testing): this module's seed helpers

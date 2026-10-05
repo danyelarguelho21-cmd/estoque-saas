@@ -84,7 +84,9 @@ export default auth(async (req) => {
       return NextResponse.next();
     }
     const hasPlatformSession =
-      req.cookies.has("__Host-platform-session") || req.cookies.has("platform-session");
+      req.cookies.has("__Host-platform-session") || req.cookies.has("platform-session-dev");
+    // "platform-session-dev" é o nome usado em HTTP puro (localhost) por modules/admin/session.ts;
+    // antes o proxy procurava "platform-session" e redirecionava o admin local de volta ao login.
     if (!hasPlatformSession) {
       return NextResponse.redirect(new URL("/admin/entrar", req.url));
     }

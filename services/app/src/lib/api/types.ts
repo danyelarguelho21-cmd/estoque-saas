@@ -322,6 +322,7 @@ export interface Subscription {
   paymentMethod: PaymentMethod;
   currentPeriodStart: string;
   currentPeriodEnd: string;
+  trialEndsAt?: string | null;
 }
 
 export interface Invoice {
@@ -346,6 +347,8 @@ export interface TenantAdminSummary {
   cpf: string | null;
   planName: string;
   subscriptionStatus: SubscriptionStatus;
+  trialEndsAt: string | null;
+  courtesyAccess: boolean;
   status: "active" | "suspended" | "canceled";
   createdAt: string;
 }

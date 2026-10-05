@@ -77,6 +77,8 @@ async function generateChargeForTenant(tenantId: string): Promise<boolean> {
     // gerando a primeira cobrança normalmente; "trialing" mantido só por linhas antigas no banco.
     const BILLABLE_STATUSES = new Set(["active", "trialing", "pending_payment"]);
     if (!BILLABLE_STATUSES.has(subscription.status)) return false;
+    // Teste liberado no painel /admin ainda vigente: nada a cobrar até a data de término.
+    if (subscription.status === "trialing" && subscription.trialEndsAt && subscription.trialEndsAt > new Date()) return false;
 
     const due = !subscription.currentPeriodEnd || subscription.currentPeriodEnd <= new Date();
     if (!due) return false;

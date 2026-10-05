@@ -13,7 +13,9 @@ export interface SignupInput {
   adminEmail: string;
   password: string;
   planId: string;
-  billingAddress: BillingAddress;
+  // Opcional só para cadastros feitos pelo dono da plataforma no painel /admin — o cliente informa
+  // o endereço depois, em /assinatura, se for pagar via Pix.
+  billingAddress?: BillingAddress | undefined;
 }
 
 export interface SignupResult {
@@ -48,7 +50,7 @@ export async function signupTenant(input: SignupInput): Promise<SignupResult> {
           cnpj: input.cnpj,
           cpf: input.cpf,
           planId: input.planId,
-          ...billingAddressToTenantData(input.billingAddress),
+          ...(input.billingAddress ? billingAddressToTenantData(input.billingAddress) : {}),
         },
       });
       await tx.user.create({

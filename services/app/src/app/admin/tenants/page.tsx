@@ -14,6 +14,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { platformAdminApi } from "@/lib/api/admin";
+import { billingApi } from "@/lib/api/billing";
+import { ApiError } from "@/lib/api/client";
+import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
 import { formatDateBR } from "@/lib/format";
 import type { SubscriptionStatus, TenantAdminSummary } from "@/lib/api/types";
 
@@ -24,6 +28,21 @@ const STATUS_OPTIONS = [
   { value: "active", label: "Ativa" },
   { value: "past_due", label: "Inadimplente" },
   { value: "canceled", label: "Cancelada" },
+];
+
+const STATUS_LABEL: Record<SubscriptionStatus, string> = {
+  pending_payment: "Pagamento pendente",
+  trialing: "Teste",
+  active: "Ativa",
+  past_due: "Inadimplente",
+  canceled: "Cancelada",
+};
+
+const TRIAL_DAY_OPTIONS = [
+  { value: "7", label: "7 dias" },
+  { value: "15", label: "15 dias" },
+  { value: "30", label: "30 dias" },
+  { value: "60", label: "60 dias" },
 ];
 
 const STATUS_BADGE: Record<SubscriptionStatus, "success" | "danger" | "neutral" | "info"> = {
@@ -76,7 +95,9 @@ export default function PlatformTenantsPage() {
             <h1 className="text-xl font-semibold text-white">Assinantes</h1>
             <p className="text-sm text-slate-400">Todos os tenants da plataforma</p>
           </div>
-          <div className="w-full max-w-[200px]">
+          <div className="flex flex-wrap items-center gap-3">
+            <NewTenantDialog onDone={refresh} />
+            <div className="w-[200px]">
             <Select
               value={statusFilter}
               onValueChange={(v) => {
@@ -86,6 +107,7 @@ export default function PlatformTenantsPage() {
               }}
               options={STATUS_OPTIONS}
             />
+            </div>
           </div>
         </div>
 
@@ -116,7 +138,11 @@ export default function PlatformTenantsPage() {
                       </TableCell>
                       <TableCell>{tenant.planName}</TableCell>
                       <TableCell>
-                        <Badge variant={STATUS_BADGE[tenant.subscriptionStatus]}>{tenant.subscriptionStatus}</Badge>
+                        <Badge variant={STATUS_BADGE[tenant.subscriptionStatus]}>{STATUS_LABEL[tenant.subscriptionStatus]}</Badge>
+                        {tenant.courtesyAccess && <span className="mt-1 block text-xs text-slate-400">cortesia (sem cobrança)</span>}
+                        {tenant.subscriptionStatus === "trialing" && tenant.trialEndsAt && (
+                          <span className="mt-1 block text-xs text-slate-400">até {formatDateBR(tenant.trialEndsAt)}</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={tenant.status === "active" ? "success" : tenant.status === "suspended" ? "danger" : "neutral"}>
@@ -125,7 +151,11 @@ export default function PlatformTenantsPage() {
                       </TableCell>
                       <TableCell>{formatDateBR(tenant.createdAt)}</TableCell>
                       <TableCell>
-                        <TenantAction tenant={tenant} onDone={refresh} />
+                        <div className="flex flex-wrap gap-2">
+                          <TrialAction tenant={tenant} onDone={refresh} />
+                          <AccessAction tenant={tenant} onDone={refresh} />
+                          <TenantAction tenant={tenant} onDone={refresh} />
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -143,6 +173,225 @@ export default function PlatformTenantsPage() {
         </Card>
       </div>
     </AdminShell>
+  );
+}
+
+const ACCESS_OPTIONS = [
+  { value: "courtesy", label: "Acesso liberado (cortesia, sem prazo)" },
+  { value: "trial", label: "Teste grátis com prazo" },
+  { value: "pending", label: "Aguardando pagamento (normal)" },
+];
+
+function NewTenantDialog({ onDone }: { onDone: () => void }) {
+  const { notify } = useToast();
+  const plansQuery = useQuery({ queryKey: ["plans"], queryFn: billingApi.listPlans });
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [personType, setPersonType] = useState<"PJ" | "PF">("PJ");
+  const [companyName, setCompanyName] = useState("");
+  const [docNumber, setDocNumber] = useState("");
+  const [adminName, setAdminName] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [planId, setPlanId] = useState("");
+  const [access, setAccess] = useState("courtesy");
+  const [days, setDays] = useState("15");
+
+  const planOptions = (plansQuery.data ?? []).map((plan) => ({ value: plan.id, label: plan.name }));
+
+  function reset() {
+    setPersonType("PJ"); setCompanyName(""); setDocNumber(""); setAdminName(""); setAdminEmail("");
+    setPassword(""); setPlanId(""); setAccess("courtesy"); setDays("15"); setError(null);
+  }
+
+  async function handleSubmit() {
+    setError(null);
+    if (!companyName || !docNumber || !adminName || !adminEmail || password.length < 8 || !planId) {
+      setError("Preencha todos os campos. A senha precisa ter pelo menos 8 caracteres.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const accessValue =
+        access === "trial" ? { type: "trial" as const, days: Number(days) } : access === "pending" ? { type: "pending" as const } : { type: "courtesy" as const };
+      const base = { companyName, adminName, adminEmail, password, planId, access: accessValue };
+      await platformAdminApi.createTenant(personType === "PJ" ? { ...base, personType, cnpj: docNumber } : { ...base, personType, cpf: docNumber });
+      notify({ title: `Cadastro de ${companyName} criado`, description: `Login: ${adminEmail}`, variant: "success" });
+      setOpen(false);
+      reset();
+      onDone();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) setError(err.message || "CNPJ/CPF ou e-mail já cadastrado.");
+      else if (err instanceof ApiError && (err.status === 400 || err.status === 422)) setError("Confira os dados: CNPJ/CPF, e-mail e senha.");
+      else setError("Não foi possível criar o cadastro agora.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset(); }}>
+      <DialogTrigger asChild>
+        <Button size="sm">+ Novo cadastro</Button>
+      </DialogTrigger>
+      <DialogContent title="Novo cadastro de cliente" description="Cria a empresa e o login do cliente. Envie o e-mail e a senha para ele entrar.">
+        <div className="flex max-h-[65vh] flex-col gap-3 overflow-y-auto pr-1">
+          <Field label="Tipo" htmlFor="nt-type">
+            <Select id="nt-type" value={personType} onValueChange={(v) => setPersonType(v as "PJ" | "PF")}
+              options={[{ value: "PJ", label: "Empresa (CNPJ)" }, { value: "PF", label: "Pessoa física (CPF)" }]} />
+          </Field>
+          <Field label={personType === "PJ" ? "Nome da empresa" : "Nome do negócio"} htmlFor="nt-company" required>
+            <Input id="nt-company" value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
+          </Field>
+          <Field label={personType === "PJ" ? "CNPJ" : "CPF"} htmlFor="nt-doc" required>
+            <Input id="nt-doc" value={docNumber} onChange={(e) => setDocNumber(e.target.value)} inputMode="numeric" />
+          </Field>
+          <Field label="Nome do responsável" htmlFor="nt-admin" required>
+            <Input id="nt-admin" value={adminName} onChange={(e) => setAdminName(e.target.value)} />
+          </Field>
+          <Field label="E-mail de login" htmlFor="nt-email" required>
+            <Input id="nt-email" type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
+          </Field>
+          <Field label="Senha inicial" htmlFor="nt-pass" required hint="Mínimo de 8 caracteres. O cliente pode trocar depois.">
+            <Input id="nt-pass" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </Field>
+          <Field label="Plano" htmlFor="nt-plan" required>
+            <Select id="nt-plan" value={planId} onValueChange={setPlanId} options={planOptions} placeholder="Escolha o plano" />
+          </Field>
+          <Field label="Acesso" htmlFor="nt-access" required>
+            <Select id="nt-access" value={access} onValueChange={setAccess} options={ACCESS_OPTIONS} />
+          </Field>
+          {access === "trial" && (
+            <Field label="Prazo do teste" htmlFor="nt-days">
+              <Select id="nt-days" value={days} onValueChange={setDays} options={TRIAL_DAY_OPTIONS} />
+            </Field>
+          )}
+          {error && <p className="text-sm text-[var(--color-danger)]" role="alert">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+          <Button loading={submitting} onClick={() => void handleSubmit()}>Criar cadastro</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TrialAction({ tenant, onDone }: { tenant: TenantAdminSummary; onDone: () => void }) {
+  const { notify } = useToast();
+  const [open, setOpen] = useState(false);
+  const [days, setDays] = useState("15");
+  const [submitting, setSubmitting] = useState(false);
+  const onTrial = tenant.subscriptionStatus === "trialing" && Boolean(tenant.trialEndsAt);
+
+  // Cliente pagante ou conta cancelada: nada a liberar.
+  if (tenant.subscriptionStatus === "active" || tenant.status === "canceled") return null;
+
+  async function handleConfirm() {
+    setSubmitting(true);
+    try {
+      if (onTrial) {
+        await platformAdminApi.endTrial(tenant.id);
+        notify({ title: `Teste de ${tenant.name} encerrado`, variant: "info" });
+      } else {
+        await platformAdminApi.grantTrial(tenant.id, Number(days));
+        notify({ title: `Teste liberado para ${tenant.name} por ${days} dias`, variant: "success" });
+      }
+      setOpen(false);
+      onDone();
+    } catch (err) {
+      notify({ title: "Não foi possível concluir", description: err instanceof Error ? err.message : undefined, variant: "error" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">
+          {onTrial ? "Encerrar teste" : "Liberar teste"}
+        </Button>
+      </DialogTrigger>
+      <DialogContent title={onTrial ? "Encerrar período de teste" : "Liberar período de teste"}>
+        {onTrial ? (
+          <p className="text-sm text-slate-600">
+            {tenant.name} perde o acesso agora e precisará pagar a assinatura para continuar usando o sistema.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-slate-600">
+              {tenant.name} terá acesso completo ao plano {tenant.planName} sem pagar, pelo prazo escolhido. Ao fim do
+              prazo, o acesso é bloqueado e o cliente vê a tela de pagamento.
+            </p>
+            <Select value={days} onValueChange={setDays} options={TRIAL_DAY_OPTIONS} />
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancelar
+          </Button>
+          <Button variant={onTrial ? "danger" : "primary"} loading={submitting} onClick={handleConfirm}>
+            {onTrial ? "Encerrar teste" : "Liberar teste"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AccessAction({ tenant, onDone }: { tenant: TenantAdminSummary; onDone: () => void }) {
+  const { notify } = useToast();
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const revoking = tenant.courtesyAccess;
+
+  // Cliente pagante (ativo com assinatura no gateway) ou conta cancelada: nada a fazer aqui.
+  if (tenant.status === "canceled" || (tenant.subscriptionStatus === "active" && !tenant.courtesyAccess)) return null;
+
+  async function handleConfirm() {
+    setSubmitting(true);
+    try {
+      if (revoking) {
+        await platformAdminApi.revokeAccess(tenant.id);
+        notify({ title: `Acesso de ${tenant.name} removido`, variant: "info" });
+      } else {
+        await platformAdminApi.grantAccess(tenant.id);
+        notify({ title: `Acesso liberado para ${tenant.name}`, variant: "success" });
+      }
+      setOpen(false);
+      onDone();
+    } catch (err) {
+      notify({ title: "Não foi possível concluir", description: err instanceof Error ? err.message : undefined, variant: "error" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant={revoking ? "danger" : "outline"}>
+          {revoking ? "Remover acesso" : "Liberar acesso"}
+        </Button>
+      </DialogTrigger>
+      <DialogContent title={revoking ? "Remover acesso liberado" : "Liberar acesso sem cobrança"}>
+        <p className="text-sm text-slate-600">
+          {revoking
+            ? `${tenant.name} perde o acesso agora e precisará pagar a assinatura para continuar usando o sistema.`
+            : `${tenant.name} terá acesso completo ao plano ${tenant.planName}, sem cobrança e sem prazo para acabar, até você remover. Use para parceiros ou cortesias.`}
+        </p>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancelar
+          </Button>
+          <Button variant={revoking ? "danger" : "primary"} loading={submitting} onClick={handleConfirm}>
+            {revoking ? "Remover acesso" : "Liberar acesso"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -29,9 +29,22 @@ const BLOCKED_SUBSCRIPTION_STATUSES = new Set(["pending_payment", "trialing"]);
 // checagem em requireSession usa pras rotas de API, pra nunca divergir sobre o que conta como
 // "bloqueado". `subscription` null (tenant sem NENHUMA assinatura — só acontece em fixtures de
 // teste, ver comentário em requireSession) não é bloqueado: fail-open deliberado.
+//
+// Exceção: teste liberado manualmente pelo dono da plataforma no painel /admin — status
+// "trialing" COM trialEndsAt no futuro libera o acesso. Quando a data passa, a assinatura volta
+// sozinha para "pending_payment" (o cliente cai em /assinatura e pode pagar normalmente). Linhas
+// "trialing" antigas, sem trialEndsAt, continuam bloqueadas como antes.
 export async function isSubscriptionBlocked(tenantId: string): Promise<boolean> {
-  const subscription = await withTenant(tenantId, (tx) => tx.subscription.findFirst({ orderBy: { createdAt: "desc" } }));
-  return subscription !== null && BLOCKED_SUBSCRIPTION_STATUSES.has(subscription.status);
+  return withTenant(tenantId, async (tx) => {
+    const subscription = await tx.subscription.findFirst({ orderBy: { createdAt: "desc" } });
+    if (!subscription) return false;
+    if (subscription.status === "trialing" && subscription.trialEndsAt) {
+      if (subscription.trialEndsAt > new Date()) return false;
+      await tx.subscription.update({ where: { id: subscription.id }, data: { status: "pending_payment", trialEndsAt: null } });
+      return true;
+    }
+    return BLOCKED_SUBSCRIPTION_STATUSES.has(subscription.status);
+  });
 }
 
 // Lança UnauthorizedError (401) se não houver sessão válida. Toda rota tenant-scoped chama isto
