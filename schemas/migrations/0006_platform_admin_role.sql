@@ -26,7 +26,7 @@ GRANT CONNECT ON DATABASE estoque_saas TO platform_admin_role;
 GRANT USAGE ON SCHEMA public TO platform_admin_role;
 
 GRANT SELECT, UPDATE ON tenants TO platform_admin_role; -- listar + suspender/reativar (status)
-GRANT SELECT ON subscriptions TO platform_admin_role; -- métricas (MRR, inadimplência)
+GRANT SELECT, UPDATE ON subscriptions TO platform_admin_role; -- métricas (MRR, inadimplência) + liberar teste/acesso cortesia no painel /admin
 GRANT SELECT ON invoices TO platform_admin_role; -- métricas (churn, faturas em atraso)
 GRANT SELECT ON plans TO platform_admin_role; -- nome do plano na listagem de tenants
 GRANT SELECT, INSERT, UPDATE ON platform_admins TO platform_admin_role; -- login do próprio admin
