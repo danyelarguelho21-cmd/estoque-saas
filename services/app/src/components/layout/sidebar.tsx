@@ -11,6 +11,11 @@ import { cn } from "@/lib/utils";
 export function Sidebar({ className }: { className?: string }) {
   const pathname = usePathname();
   const { can } = useCurrentUser();
+  const visibleItems = TENANT_NAV_ITEMS.filter((item) => !item.permission || can(item.permission));
+  // Destaca só o item mais específico (ex.: /vendas/clientes ativa "Clientes", não "Vendas").
+  const activeHref = visibleItems
+    .filter((item) => (item.matchPrefix ? pathname.startsWith(item.href) : pathname === item.href))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 
   return (
     <nav aria-label="Navegação principal" className={cn("flex h-full flex-col gap-1 p-4", className)}>
@@ -18,8 +23,8 @@ export function Sidebar({ className }: { className?: string }) {
         <Boxes className="h-6 w-6 text-[var(--color-primary)]" aria-hidden />
         Zolo
       </Link>
-      {TENANT_NAV_ITEMS.filter((item) => !item.permission || can(item.permission)).map((item) => {
-        const isActive = item.matchPrefix ? pathname.startsWith(item.href) : pathname === item.href;
+      {visibleItems.map((item) => {
+        const isActive = item.href === activeHref;
         const Icon = item.icon;
         return (
           <Link

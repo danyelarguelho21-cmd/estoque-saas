@@ -2,11 +2,10 @@
 
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
@@ -31,9 +30,41 @@ export default function ProductDetailPage({ params }: { params: Promise<{ produc
     queryFn: () => catalogApi.getProduct(productId),
   });
   const storesQuery = useQuery({ queryKey: ["stores"], queryFn: () => tenantsApi.listStores({ limit: 100 }) });
+  const settingsQuery = useQuery({
+    queryKey: ["product", productId, "store-settings"],
+    queryFn: () => catalogApi.listProductStoreSettings(productId),
+  });
+  const queryClient = useQueryClient();
+  const stores = storesQuery.data?.items ?? [];
+
+  // Mínimos por loja: o salvo no servidor + o que o usuário editou ("" = usa o mínimo geral).
+  const savedMins: Record<string, string> = Object.fromEntries(
+    (settingsQuery.data ?? []).map((s) => [s.storeId, s.minStockOverride === null ? "" : String(s.minStockOverride)]),
+  );
+  const [storeEdits, setStoreEdits] = useState<Record<string, string>>({});
+  const storeMins: Record<string, string> = { ...savedMins, ...storeEdits };
 
   async function handleUpdate(input: ProductInput) {
     await catalogApi.updateProduct(productId, input);
+
+    if (stores.length > 1) {
+      const saved = new Map((settingsQuery.data ?? []).map((s) => [s.storeId, s.minStockOverride]));
+      for (const store of stores) {
+        const raw = (storeMins[store.id] ?? "").trim();
+        const next = raw === "" ? null : Math.max(0, Math.round(Number(raw) || 0));
+        if ((saved.get(store.id) ?? null) !== next) {
+          await catalogApi.setProductStoreMinStock(productId, store.id, next);
+        }
+      }
+    }
+
+    // Atualiza alertas/listas na hora (sem esperar o cache expirar).
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["product", productId] }),
+      queryClient.invalidateQueries({ queryKey: ["products"] }),
+      queryClient.invalidateQueries({ queryKey: ["alerts"] }),
+    ]);
+    setStoreEdits({});
     notify({ title: "Produto atualizado", variant: "success" });
   }
 
@@ -95,86 +126,55 @@ export default function ProductDetailPage({ params }: { params: Promise<{ produc
           </RoleGate>
         </div>
 
-        <Tabs defaultValue="geral">
-          <TabsList>
-            <TabsTrigger value="geral">Dados gerais</TabsTrigger>
-            <TabsTrigger value="minimo">Estoque mínimo por loja</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="geral">
-            <Card>
-              <CardHeader>
-                <CardTitle>Editar produto</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ProductForm
-                  submitLabel="Salvar alterações"
-                  initial={{
-                    sku: product.sku ?? "",
-                    name: product.name,
-                    ...(product.categoryId ? { categoryId: product.categoryId } : {}),
-                    unitOfMeasure: product.unitOfMeasure,
-                    ...(product.barcode ? { barcode: product.barcode } : {}),
-                    ...(product.supplierId ? { supplierId: product.supplierId } : {}),
-                    isPerishable: product.isPerishable ?? false,
-                    minStockGlobal: product.minStockGlobal ?? 0,
-                    ...(product.costPriceCents !== undefined ? { costPriceCents: product.costPriceCents } : {}),
-                    ...(product.salePriceCents !== undefined ? { salePriceCents: product.salePriceCents } : {}),
-                  }}
-                  onSubmit={handleUpdate}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="minimo">
-            <Card>
-              <CardHeader>
-                <CardTitle>Estoque mínimo por loja</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                <p className="text-sm text-[var(--color-muted)]">
-                  Sobrepõe o mínimo global ({product.minStockGlobal ?? 0}) apenas para a loja selecionada.
-                </p>
-                {storesQuery.data?.items.length ? (
-                  storesQuery.data.items.map((store) => (
-                    <StoreMinStockRow key={store.id} productId={productId} storeName={store.name} storeId={store.id} />
-                  ))
-                ) : (
-                  <EmptyState title="Nenhuma loja cadastrada" description="Cadastre lojas em Usuários e lojas." />
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+        <Card>
+          <CardHeader>
+            <CardTitle>Editar produto</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ProductForm
+              submitLabel="Salvar alterações"
+              initial={{
+                sku: product.sku ?? "",
+                name: product.name,
+                ...(product.categoryId ? { categoryId: product.categoryId } : {}),
+                unitOfMeasure: product.unitOfMeasure,
+                ...(product.barcode ? { barcode: product.barcode } : {}),
+                ...(product.supplierId ? { supplierId: product.supplierId } : {}),
+                isPerishable: product.isPerishable ?? false,
+                minStockGlobal: product.minStockGlobal ?? 0,
+                ...(product.costPriceCents !== undefined ? { costPriceCents: product.costPriceCents } : {}),
+                ...(product.salePriceCents !== undefined ? { salePriceCents: product.salePriceCents } : {}),
+              }}
+              onSubmit={handleUpdate}
+            >
+              {stores.length > 1 && (
+                <div className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] p-4">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">Estoque mínimo por loja (opcional)</p>
+                    <p className="text-xs text-[var(--color-muted)]">
+                      Deixe em branco para usar o mínimo geral acima. Preencha só se alguma loja precisar de um mínimo diferente.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {stores.map((store) => (
+                      <Field key={store.id} label={store.name} htmlFor={`min-${store.id}`}>
+                        <Input
+                          id={`min-${store.id}`}
+                          type="number"
+                          min={0}
+                          placeholder="Usa o mínimo geral"
+                          value={storeMins[store.id] ?? ""}
+                          onChange={(e) => setStoreEdits((prev) => ({ ...prev, [store.id]: e.target.value }))}
+                        />
+                      </Field>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </ProductForm>
+          </CardContent>
+        </Card>
       </div>
     </AppShell>
-  );
-}
-
-function StoreMinStockRow({ productId, storeId, storeName }: { productId: string; storeId: string; storeName: string }) {
-  const { notify } = useToast();
-  const [value, setValue] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      await catalogApi.setProductStoreMinStock(productId, storeId, Number(value) || 0);
-      notify({ title: `Mínimo atualizado para ${storeName}`, variant: "success" });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="flex items-end gap-3">
-      <Field label={storeName} htmlFor={`min-${storeId}`} className="flex-1">
-        <Input id={`min-${storeId}`} type="number" min={0} value={value} onChange={(e) => setValue(e.target.value)} />
-      </Field>
-      <Button variant="outline" size="sm" loading={saving} onClick={handleSave}>
-        Salvar
-      </Button>
-    </div>
   );
 }

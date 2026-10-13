@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -15,11 +15,13 @@ interface ProductFormProps {
   initial?: Partial<ProductInput>;
   submitLabel: string;
   onSubmit: (input: ProductInput) => Promise<void>;
+  /** Campos extras exibidos antes do botão salvar (salvos junto, pelo onSubmit do pai). */
+  children?: ReactNode;
 }
 
 const UNITS = ["UN", "KG", "L", "CX", "PCT", "DZ"].map((u) => ({ value: u, label: u }));
 
-export function ProductForm({ initial, submitLabel, onSubmit }: ProductFormProps) {
+export function ProductForm({ initial, submitLabel, onSubmit, children }: ProductFormProps) {
   const categoriesQuery = useQuery({ queryKey: ["categories"], queryFn: catalogApi.listCategories });
   const suppliersQuery = useQuery({
     queryKey: ["suppliers", "form"],
@@ -109,7 +111,7 @@ export function ProductForm({ initial, submitLabel, onSubmit }: ProductFormProps
             placeholder="Sem fornecedor"
           />
         </Field>
-        <Field label="Estoque mínimo (global)" htmlFor="minStockGlobal" hint="Pode ser sobreposto por loja">
+        <Field label="Estoque mínimo (global)" htmlFor="minStockGlobal" hint="Gera alerta quando o estoque ficar abaixo deste valor">
           <Input
             id="minStockGlobal"
             type="number"
@@ -134,6 +136,8 @@ export function ProductForm({ initial, submitLabel, onSubmit }: ProductFormProps
           <Input id="salePrice" type="number" min={0} step="0.01" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
         </Field>
       </div>
+
+      {children}
 
       <Button type="submit" loading={submitting} className="w-full sm:w-auto sm:self-end">
         {submitLabel}

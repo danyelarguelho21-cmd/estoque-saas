@@ -34,6 +34,7 @@ export default function NfeReviewPage({ params }: { params: Promise<{ importId: 
   const [batchInputs, setBatchInputs] = useState<Record<string, { batchNumber: string; expiryDate: string }>>({});
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [bulkCreating, setBulkCreating] = useState(false);
 
   const importQuery = useQuery({
     queryKey: ["nfe-import", importId],
@@ -46,6 +47,29 @@ export default function NfeReviewPage({ params }: { params: Promise<{ importId: 
 
   const data = importQuery.data;
   const hasUnmatched = data?.items.some((item) => item.status === "unmatched") ?? true;
+  const unmatchedCount = data?.items.filter((item) => item.status === "unmatched").length ?? 0;
+
+  async function handleBulkCreate() {
+    if (unmatchedCount === 0) return;
+    setBulkCreating(true);
+    setConfirmError(null);
+    try {
+      const result = await stockApi.bulkCreateNfeProducts(importId);
+      notify({
+        title: `${result.created} produto(s) cadastrado(s) e ${result.linked} item(ns) vinculado(s)`,
+        variant: "success",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["nfe-import", importId] });
+    } catch (err) {
+      const message =
+        err instanceof ApiError && err.message && err.message.toLowerCase().includes("limite")
+          ? err.message
+          : "Não foi possível cadastrar os produtos em lote. Tente novamente.";
+      notify({ title: message, variant: "error" });
+    } finally {
+      setBulkCreating(false);
+    }
+  }
 
   function updateBatch(itemId: string, patch: Partial<{ batchNumber: string; expiryDate: string }>) {
     setBatchInputs((prev) => ({
@@ -135,8 +159,13 @@ export default function NfeReviewPage({ params }: { params: Promise<{ importId: 
 
         {(data.status === "pending_review" || data.status === "confirmed") && (
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle>Itens da nota ({data.items.length})</CardTitle>
+              {data.status === "pending_review" && unmatchedCount > 0 && (
+                <Button type="button" onClick={handleBulkCreate} loading={bulkCreating}>
+                  Cadastrar todos os não reconhecidos ({unmatchedCount})
+                </Button>
+              )}
             </CardHeader>
             <Table>
               <TableHeader>

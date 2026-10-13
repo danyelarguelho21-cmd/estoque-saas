@@ -38,7 +38,9 @@ export function NfeQuickCreateDialog({ importId, item, onCreated }: NfeQuickCrea
         product = await catalogApi.createProduct({
           name,
           unitOfMeasure,
+          ...(sku.trim() ? { sku: sku.trim() } : {}),
           ...(barcode ? { barcode } : {}),
+          costPriceCents: item.vUnComCents,
         });
       } catch {
         // Se o SKU já existir, reutiliza somente um produto com o mesmo SKU e EAN do XML.

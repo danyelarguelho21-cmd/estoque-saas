@@ -1,4 +1,5 @@
 import {
+  assertWithinPlanLimit,
   ConflictError,
   NotFoundError,
   ValidationError,
@@ -7,6 +8,7 @@ import {
   withTenant,
   type FileStorage,
 } from "@estoque-saas/shared";
+import { getTenantWithPlan } from "@/modules/auth";
 import { lockStockRow, nextBalanceAfter } from "./balance";
 import { parseNfeXml } from "./nfe-parser";
 
@@ -41,6 +43,103 @@ export async function linkNfeImportItemToProduct(
       where: { id: itemId },
       data: { matchedProductId: product.id, status: "created" },
     });
+  });
+}
+
+export interface BulkCreateNfeProductsResult {
+  created: number;
+  linked: number;
+}
+
+// Cadastro em lote: cria (ou reaproveita) um produto para CADA item ainda "unmatched" da
+// conferência, numa única transação. Reaproveita produto existente com o mesmo código de barras
+// (ou mesmo SKU sem EAN conflitante) e deduplica itens repetidos dentro da própria nota. Respeita
+// o limite de produtos do plano para o lote inteiro (tudo ou nada).
+export async function bulkCreateProductsFromNfeImport(
+  tenantId: string,
+  userId: string,
+  importId: string,
+): Promise<BulkCreateNfeProductsResult> {
+  const tenant = await getTenantWithPlan(tenantId);
+
+  return withTenant(tenantId, async (tx) => {
+    const nfeImport = await tx.nfeImport.findUnique({ where: { id: importId } });
+    if (!nfeImport) throw new NotFoundError("Import de NF-e não encontrado.");
+    if (nfeImport.status !== "pending_review") {
+      throw new ValidationError(`Import não está em conferência (status atual: ${nfeImport.status}).`);
+    }
+
+    const items = await tx.nfeImportItem.findMany({
+      where: { nfeImportId: importId, status: "unmatched" },
+      orderBy: { id: "asc" },
+    });
+    if (items.length === 0) return { created: 0, linked: 0 };
+
+    // Primeiro resolve o que já existe, para só contar no limite o que realmente será criado.
+    const plan: Array<{ itemId: string; productId: string | null; key: string }> = [];
+    const toCreate = new Map<string, (typeof items)[number]>();
+    for (const item of items) {
+      const sku = item.cProd.trim();
+      const key = item.cEAN ? `ean:${item.cEAN}` : sku ? `sku:${sku}` : `item:${item.id}`;
+      let existingId: string | null = null;
+      if (item.cEAN) {
+        existingId = (await tx.product.findFirst({ where: { barcode: item.cEAN, deletedAt: null }, select: { id: true } }))?.id ?? null;
+      } else if (sku) {
+        existingId = (await tx.product.findFirst({ where: { sku, barcode: null, deletedAt: null }, select: { id: true } }))?.id ?? null;
+      }
+      plan.push({ itemId: item.id, productId: existingId, key });
+      if (!existingId && !toCreate.has(key)) toCreate.set(key, item);
+    }
+
+    if (toCreate.size > 0) {
+      const currentCount = await tx.product.count({ where: { deletedAt: null } });
+      assertWithinPlanLimit(
+        "products",
+        currentCount,
+        { maxProducts: tenant.plan.maxProducts, maxUsers: tenant.plan.maxUsers, maxStores: tenant.plan.maxStores },
+        toCreate.size,
+      );
+    }
+
+    const createdByKey = new Map<string, string>();
+    for (const [key, item] of toCreate) {
+      const desiredSku = item.cProd.trim() || null;
+      // SKU é único por tenant: se já estiver em uso por outro produto, cadastra sem SKU.
+      const skuTaken = desiredSku ? await tx.product.findFirst({ where: { sku: desiredSku }, select: { id: true } }) : null;
+      const product = await tx.product.create({
+        data: {
+          tenantId,
+          sku: skuTaken ? null : desiredSku,
+          name: item.xProd.trim() || desiredSku || "Produto sem nome",
+          unitOfMeasure: "UN",
+          barcode: item.cEAN ?? null,
+          supplierId: nfeImport.supplierId ?? null,
+          costPriceCents: item.vUnComCents,
+        },
+      });
+      await recordAudit(tx, {
+        tenantId,
+        userId,
+        entityType: "product",
+        entityId: product.id,
+        action: "create",
+        after: { sku: product.sku, name: product.name, source: "nfe_bulk", nfeImportId: importId },
+      });
+      createdByKey.set(key, product.id);
+    }
+
+    let linked = 0;
+    for (const entry of plan) {
+      const productId = entry.productId ?? createdByKey.get(entry.key);
+      if (!productId) continue;
+      await tx.nfeImportItem.update({
+        where: { id: entry.itemId },
+        data: { matchedProductId: productId, status: entry.productId ? "matched" : "created" },
+      });
+      linked++;
+    }
+
+    return { created: createdByKey.size, linked };
   });
 }
 

@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, UserPlus } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { ProductPicker } from "@/components/features/product-picker";
+import { NewCustomerDialog } from "@/components/features/new-customer-dialog";
 import { FefoSuggestionPanel } from "@/components/features/fefo-suggestion-panel";
 import { useToast } from "@/components/ui/toast";
 import { salesApi } from "@/lib/api/sales";
@@ -28,6 +29,8 @@ interface SaleRow {
   unitPrice: string;
   batchId: string | undefined;
 }
+
+const NO_CUSTOMER = "__none__";
 
 function newRow(): SaleRow {
   return { key: crypto.randomUUID(), product: null, quantity: "1", unitPrice: "", batchId: undefined };
@@ -130,14 +133,31 @@ export default function NewSalePage() {
                     placeholder="Selecione"
                   />
                 </Field>
-                <Field label="Cliente" htmlFor="customerId" hint="Opcional — venda para consumidor final sem cadastro">
-                  <Select
-                    id="customerId"
-                    value={customerId}
-                    onValueChange={setCustomerId}
-                    options={(customersQuery.data?.items ?? []).map((c) => ({ value: c.id, label: c.name }))}
-                    placeholder="Cliente não identificado"
-                  />
+                <Field label="Cliente" htmlFor="customerId" hint="Opcional — deixe em branco para consumidor final">
+                  <div className="flex flex-col gap-1.5">
+                    <Select
+                      id="customerId"
+                      value={customerId ?? NO_CUSTOMER}
+                      onValueChange={(value) => setCustomerId(value === NO_CUSTOMER ? undefined : value)}
+                      options={[
+                        { value: NO_CUSTOMER, label: "Cliente não identificado" },
+                        ...(customersQuery.data?.items ?? []).map((c) => ({ value: c.id, label: c.name })),
+                      ]}
+                      placeholder="Cliente não identificado"
+                    />
+                    <NewCustomerDialog
+                      onCreated={(customer) => setCustomerId(customer.id)}
+                      trigger={
+                        <button
+                          type="button"
+                          className="inline-flex w-fit items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline"
+                        >
+                          <UserPlus className="h-3.5 w-3.5" aria-hidden />
+                          Cadastrar novo cliente
+                        </button>
+                      }
+                    />
+                  </div>
                 </Field>
                 <Field label="Forma de pagamento" htmlFor="paymentMethodLabel" hint="Informativo">
                   <Input id="paymentMethodLabel" placeholder="Ex.: Dinheiro, Pix" value={paymentMethodLabel} onChange={(e) => setPaymentMethodLabel(e.target.value)} />

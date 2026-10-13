@@ -1,19 +1,16 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Search } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Field } from "@/components/ui/field";
-import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageSpinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
-import { useToast } from "@/components/ui/toast";
+import { NewCustomerDialog } from "@/components/features/new-customer-dialog";
 import { salesApi } from "@/lib/api/sales";
 
 export default function CustomersPage() {
@@ -76,73 +73,5 @@ export default function CustomersPage() {
         </Card>
       </div>
     </AppShell>
-  );
-}
-
-function NewCustomerDialog() {
-  const queryClient = useQueryClient();
-  const { notify } = useToast();
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [document, setDocument] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    try {
-      await salesApi.createCustomer({
-        name,
-        ...(document ? { document } : {}),
-        ...(phone ? { phone } : {}),
-        ...(email ? { email } : {}),
-      });
-      notify({ title: "Cliente cadastrado", variant: "success" });
-      setOpen(false);
-      setName("");
-      setDocument("");
-      setPhone("");
-      setEmail("");
-      await queryClient.invalidateQueries({ queryKey: ["customers"] });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <Plus className="h-4 w-4" />
-          Novo cliente
-        </Button>
-      </DialogTrigger>
-      <DialogContent title="Novo cliente">
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-          <Field label="Nome" htmlFor="customerName" required>
-            <Input id="customerName" required value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label="CPF/CNPJ" htmlFor="customerDocument" hint="Opcional; pessoa física pode ser cadastrada sem documento">
-            <Input id="customerDocument" value={document} onChange={(e) => setDocument(e.target.value)} />
-          </Field>
-          <Field label="Telefone" htmlFor="customerPhone">
-            <Input id="customerPhone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </Field>
-          <Field label="E-mail" htmlFor="customerEmail">
-            <Input id="customerEmail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </Field>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" loading={submitting}>
-              Cadastrar
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

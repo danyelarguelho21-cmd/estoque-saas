@@ -41,6 +41,8 @@ export const stockApi = {
   getNfeImport: (importId: string) => api.get<NfeImport>(`/api/nfe-imports/${importId}`),
   linkNfeImportItemToProduct: (importId: string, itemId: string, productId: string) =>
     api.patch<void>(`/api/nfe-imports/${importId}/items/${itemId}`, { productId }),
+  bulkCreateNfeProducts: (importId: string) =>
+    api.post<{ created: number; linked: number }>(`/api/nfe-imports/${importId}/bulk-create-products`, {}),
   confirmNfeImport: (importId: string, items: NfeConfirmItemInput[]) =>
     api.post<void>(`/api/nfe-imports/${importId}/confirm`, { items }),
 

@@ -3,6 +3,7 @@ import {
   Package,
   Boxes,
   ShoppingCart,
+  Contact,
   Users,
   CreditCard,
 } from "lucide-react";
@@ -22,6 +23,7 @@ export const TENANT_NAV_ITEMS: NavItem[] = [
   { href: "/produtos", label: "Produtos", icon: Package, permission: "catalog:manage", matchPrefix: true },
   { href: "/estoque", label: "Estoque", icon: Boxes, permission: "stock:entry", matchPrefix: true },
   { href: "/vendas", label: "Vendas", icon: ShoppingCart, permission: "sales:view", matchPrefix: true },
+  { href: "/vendas/clientes", label: "Clientes", icon: Contact, permission: "sales:view", matchPrefix: true },
   { href: "/configuracoes/usuarios", label: "Usuários e lojas", icon: Users, permission: "users:manage", matchPrefix: true },
   { href: "/assinatura", label: "Assinatura", icon: CreditCard, permission: "billing:manage" },
 ];

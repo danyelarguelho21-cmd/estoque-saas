@@ -11,6 +11,8 @@ export {
   uploadNfeImport,
   processNfeImportJob,
   linkNfeImportItemToProduct,
+  bulkCreateProductsFromNfeImport,
+  type BulkCreateNfeProductsResult,
   confirmNfeImport,
   type UploadNfeImportResult,
   type ConfirmNfeImportItemOverride,

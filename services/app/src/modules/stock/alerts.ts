@@ -30,6 +30,26 @@ export async function listLowStockAlerts(tenantId: string, storeId?: string): Pr
     ]);
     const overrideByProductId = new Map(overrides.map((o) => [o.productId, o.minStockOverride]));
 
+    // Visão "todas as lojas": além do mínimo global sobre o total, um mínimo definido para uma
+    // loja específica também precisa gerar alerta quando aquela loja fica abaixo dele.
+    const storeLow = new Map<string, { currentStock: number; minStock: number }>();
+    if (!storeId) {
+      const storeOverrides = await tx.productStoreSetting.findMany({
+        where: { productId: { in: productIds }, minStockOverride: { not: null } },
+      });
+      const byStore = new Map<string, typeof storeOverrides>();
+      for (const o of storeOverrides) byStore.set(o.storeId, [...(byStore.get(o.storeId) ?? []), o]);
+      for (const [sId, list] of byStore) {
+        const stock = await getCurrentStockForProducts(tx, list.map((o) => o.productId), sId);
+        for (const o of list) {
+          const current = stock.get(o.productId) ?? 0;
+          if (o.minStockOverride !== null && current < o.minStockOverride && !storeLow.has(o.productId)) {
+            storeLow.set(o.productId, { currentStock: current, minStock: o.minStockOverride });
+          }
+        }
+      }
+    }
+
     const result: LowStockProduct[] = [];
     for (const product of products) {
       const override = overrideByProductId.get(product.id);
@@ -37,6 +57,9 @@ export async function listLowStockAlerts(tenantId: string, storeId?: string): Pr
       const currentStock = stockByProduct.get(product.id) ?? 0;
       if (currentStock < minStock) {
         result.push({ id: product.id, sku: product.sku, name: product.name, currentStock, minStock });
+      } else {
+        const low = storeLow.get(product.id);
+        if (low) result.push({ id: product.id, sku: product.sku, name: product.name, ...low });
       }
     }
     return result;

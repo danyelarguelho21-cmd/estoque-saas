@@ -190,6 +190,12 @@ export async function deleteProduct(tenantId: string, userId: string, productId:
   });
 }
 
+export async function listProductStoreSettings(tenantId: string, productId: string) {
+  return withTenant(tenantId, (tx) =>
+    tx.productStoreSetting.findMany({ where: { productId }, select: { storeId: true, minStockOverride: true } }),
+  );
+}
+
 export async function setProductStoreMinStock(tenantId: string, productId: string, storeId: string, minStockOverride: number | null) {
   return withTenant(tenantId, (tx) =>
     tx.productStoreSetting.upsert({

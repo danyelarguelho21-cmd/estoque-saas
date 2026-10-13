@@ -17,7 +17,9 @@ export const catalogApi = {
   updateProduct: (productId: string, input: ProductInput) =>
     api.patch<Product>(`/api/products/${productId}`, input),
   deleteProduct: (productId: string) => api.delete<void>(`/api/products/${productId}`),
-  setProductStoreMinStock: (productId: string, storeId: string, minStockOverride: number) =>
+  listProductStoreSettings: (productId: string) =>
+    api.get<Array<{ storeId: string; minStockOverride: number | null }>>(`/api/products/${productId}/store-settings`),
+  setProductStoreMinStock: (productId: string, storeId: string, minStockOverride: number | null) =>
     api.put<void>(`/api/products/${productId}/store-settings/${storeId}`, { minStockOverride }),
   importProductsCsv: (file: File) => {
     const form = new FormData();
