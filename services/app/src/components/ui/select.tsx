@@ -37,7 +37,7 @@ export function Select({
         id={id}
         aria-invalid={invalid || undefined}
         className={cn(
-          "flex h-10 w-full items-center justify-between rounded-md border border-[var(--color-border)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-slate-400",
+          "flex h-10 w-full items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-input)] px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-slate-400",
           invalid && "border-[var(--color-danger)]",
         )}
         {...aria}
@@ -49,7 +49,7 @@ export function Select({
       </RadixSelect.Trigger>
       <RadixSelect.Portal>
         <RadixSelect.Content
-          className="z-50 max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-y-auto rounded-md border border-[var(--color-border)] bg-white shadow-lg"
+          className="z-50 max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg"
           position="popper"
           sideOffset={4}
         >

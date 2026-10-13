@@ -54,7 +54,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <RadixToast.Root
               key={toast.id}
               className={cn(
-                "rounded-md bg-white p-4 shadow-lg ring-1 ring-black/5 data-[state=open]:animate-in data-[state=open]:slide-in-from-right-full data-[state=closed]:animate-out data-[state=closed]:fade-out",
+                "rounded-md bg-[var(--color-surface)] p-4 shadow-lg ring-1 ring-[var(--color-border)] data-[state=open]:animate-in data-[state=open]:slide-in-from-right-full data-[state=closed]:animate-out data-[state=closed]:fade-out",
                 VARIANT_CLASS[toast.variant],
               )}
               onOpenChange={(open) => {

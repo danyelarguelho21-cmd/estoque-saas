@@ -14,7 +14,7 @@ export function Avatar({ name, className }: { name: string; className?: string }
   return (
     <RadixAvatar.Root
       className={cn(
-        "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--color-primary)] text-sm font-medium text-white",
+        "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-foreground)]",
         className,
       )}
     >

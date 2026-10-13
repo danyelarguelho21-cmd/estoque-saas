@@ -41,7 +41,7 @@ export default function PlatformAdminLoginPage() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-slate-950 px-4">
+    <div className="legacy-slate flex min-h-dvh items-center justify-center bg-slate-950 px-4">
       <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-8 shadow-xl">
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
           <ShieldCheck className="h-8 w-8 text-emerald-400" aria-hidden />

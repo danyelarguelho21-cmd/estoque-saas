@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Boxes } from "lucide-react";
 import { SidebarSupportCard } from "@/components/layout/whatsapp-support";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { TENANT_NAV_ITEMS } from "@/components/layout/nav-items";
@@ -20,7 +19,7 @@ export function Sidebar({ className }: { className?: string }) {
   return (
     <nav aria-label="Navegação principal" className={cn("flex h-full flex-col gap-1 p-4", className)}>
       <Link href="/painel" className="mb-6 flex items-center gap-2 px-2 text-base font-semibold text-slate-900">
-        <Boxes className="h-6 w-6 text-[var(--color-primary)]" aria-hidden />
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-[var(--color-primary)] text-base font-extrabold text-[var(--color-primary-foreground)] shadow-[0_0_24px_rgb(143_227_91/0.35)]" aria-hidden>z</span>
         Zolo
       </Link>
       {visibleItems.map((item) => {

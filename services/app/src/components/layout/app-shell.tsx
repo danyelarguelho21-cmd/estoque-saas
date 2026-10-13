@@ -12,14 +12,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-dvh bg-[var(--color-background)]">
-      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 overflow-y-auto border-r border-[var(--color-border)] bg-white lg:block">
+      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 overflow-y-auto border-r border-[var(--color-border)] bg-[var(--color-surface)] lg:block">
         <Sidebar />
       </aside>
 
       <RadixDialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
         <RadixDialog.Portal>
-          <RadixDialog.Overlay className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden" />
-          <RadixDialog.Content className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-xl lg:hidden">
+          <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm lg:hidden" />
+          <RadixDialog.Content className="fixed inset-y-0 left-0 z-50 w-64 bg-[var(--color-surface)] shadow-xl lg:hidden">
             <RadixDialog.Title className="sr-only">Menu de navegação</RadixDialog.Title>
             <Sidebar />
           </RadixDialog.Content>

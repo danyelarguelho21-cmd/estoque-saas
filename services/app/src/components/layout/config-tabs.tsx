@@ -15,7 +15,7 @@ export function ConfigTabs({ active }: { active: "lojas" | "usuarios" }) {
           href={tab.href}
           className={cn(
             "rounded-sm px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors",
-            active === tab.key && "bg-white text-slate-900 shadow-sm",
+            active === tab.key && "bg-[var(--color-surface)] text-slate-900 shadow-sm",
           )}
         >
           {tab.label}

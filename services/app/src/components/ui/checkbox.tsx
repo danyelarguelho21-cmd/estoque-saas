@@ -20,12 +20,12 @@ export function Checkbox({ id, checked, onCheckedChange, disabled, ...aria }: Ch
       onCheckedChange={(value) => onCheckedChange(value === true)}
       disabled={disabled}
       className={cn(
-        "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-[var(--color-border)] bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] data-[state=checked]:border-[var(--color-primary)] data-[state=checked]:bg-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50",
+        "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-input)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] data-[state=checked]:border-[var(--color-primary)] data-[state=checked]:bg-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50",
       )}
       {...aria}
     >
       <RadixCheckbox.Indicator>
-        <Check className="h-3 w-3 text-white" aria-hidden />
+        <Check className="h-3 w-3 text-[var(--color-primary-foreground)]" aria-hidden />
       </RadixCheckbox.Indicator>
     </RadixCheckbox.Root>
   );

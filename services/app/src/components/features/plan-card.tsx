@@ -20,7 +20,7 @@ export function PlanCard({ plan, selected, onSelect, currentPlanId }: PlanCardPr
       aria-pressed={selected}
       className={cn(
         "flex w-full flex-col gap-3 rounded-lg border-2 p-5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]",
-        selected ? "border-[var(--color-primary)] bg-blue-50/40" : "border-[var(--color-border)] bg-white hover:border-slate-300",
+        selected ? "border-[var(--color-primary)] bg-blue-50/40" : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-slate-300",
       )}
     >
       <div className="flex items-center justify-between">
@@ -36,7 +36,7 @@ export function PlanCard({ plan, selected, onSelect, currentPlanId }: PlanCardPr
       <ul className="flex flex-col gap-1.5 text-sm text-slate-600">
         <li className="flex items-center gap-2">
           <Check className="h-4 w-4 text-[var(--color-success)]" aria-hidden />
-          Até {plan.maxProducts} produtos
+          Até {plan.maxProducts} produtos diferentes
         </li>
         <li className="flex items-center gap-2">
           <Check className="h-4 w-4 text-[var(--color-success)]" aria-hidden />

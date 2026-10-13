@@ -48,7 +48,7 @@ export function ProductPicker({ id, selected, onSelect, onClear }: ProductPicker
 
   if (selected) {
     return (
-      <div className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm">
+      <div className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
         <div>
           <p className="font-medium text-slate-900">{selected.name}</p>
           {selected.sku && <p className="text-xs text-[var(--color-muted)]">SKU {selected.sku}</p>}
@@ -87,7 +87,7 @@ export function ProductPicker({ id, selected, onSelect, onClear }: ProductPicker
       {open && debounced.length > 0 && (
         <ul
           role="listbox"
-          className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-[var(--color-border)] bg-white shadow-lg"
+          className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg"
         >
           {searchQuery.isLoading && <li className="px-3 py-2 text-sm text-slate-400">Buscando…</li>}
           {!searchQuery.isLoading && !searchQuery.data?.items.length && (

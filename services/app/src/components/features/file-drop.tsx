@@ -45,7 +45,7 @@ export function FileDrop({ accept, label, hint, onFileSelected, disabled = false
         if (!disabled) handleFiles(event.dataTransfer.files);
       }}
       className={cn(
-        "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[var(--color-border)] bg-white p-8 text-center transition-colors",
+        "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center transition-colors",
         isDragging && "border-[var(--color-primary)] bg-blue-50/50",
         disabled && "cursor-not-allowed opacity-50",
       )}

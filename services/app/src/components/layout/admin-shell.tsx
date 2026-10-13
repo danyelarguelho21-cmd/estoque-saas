@@ -36,7 +36,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-dvh bg-slate-950 text-slate-100">
+    <div className="legacy-slate flex min-h-dvh bg-slate-950 text-slate-100">
       <aside className="hidden w-64 shrink-0 border-r border-slate-800 bg-slate-900 lg:flex lg:flex-col">
         <div className="flex items-center gap-2 px-6 py-5 text-base font-semibold">
           <ShieldCheck className="h-6 w-6 text-emerald-400" aria-hidden />

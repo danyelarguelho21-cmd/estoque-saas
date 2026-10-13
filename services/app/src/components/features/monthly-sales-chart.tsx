@@ -26,11 +26,11 @@ export function MonthlySalesChart({ data }: { data: MonthlySalesSummary[] }) {
       </div>
       <ResponsiveContainer width="100%" height={260}>
         <BarChart data={chartData} margin={{ top: 8, right: 12, left: 8, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#dbe4dc" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2a22" vertical={false} />
           <XAxis dataKey="label" tick={{ fontSize: 12 }} />
           <YAxis tick={{ fontSize: 11 }} tickFormatter={(value: number) => `R$${formatNumberBR(value / 100, 0)}`} width={58} />
           <Tooltip formatter={(value) => [formatCentsToBRL(Number(value)), "Faturamento"]} />
-          <Bar dataKey="revenueCents" name="Faturamento" fill="#123c3a" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="revenueCents" name="Faturamento" fill="#8fe35b" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
       <p className="mt-1 text-xs text-[var(--color-muted)]">Quantidade de vendas: {chartData.map((item) => `${item.label}: ${item.salesCount}`).join(" · ")}</p>

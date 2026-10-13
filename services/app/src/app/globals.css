@@ -22,42 +22,66 @@
   --font-sans: "Manrope", var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
 
-  --color-background: #f6f8f4;
-  --color-foreground: #132524;
-  --color-muted: #5f7065;
-  --color-muted-foreground: #8a978d;
-  --color-border: #dbe4dc;
-  --color-surface: #ffffff;
+  /* Tema escuro Zolo — mesmo visual do site (fundo quase preto, verde-limão #8fe35b). */
+  --color-background: #070b08;
+  --color-foreground: #eef3ee;
+  --color-muted: #97a499;
+  --color-muted-foreground: #66726a;
+  --color-border: #1f2a22;
+  --color-surface: #0e1510;
+  --color-input: #0a100b;
 
-  --color-primary: #123c3a;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #132524;
-  --color-secondary-foreground: #ffffff;
-  --color-accent: #ece7a2;
-  --color-accent-foreground: #123c3a;
+  --color-primary: #8fe35b;
+  --color-primary-foreground: #0a1406;
+  --color-secondary: #eef3ee;
+  --color-secondary-foreground: #0a1406;
+  --color-accent: #8fe35b;
+  --color-accent-foreground: #0a1406;
 
-  --color-success: #2f7d4f;
-  --color-warning: #c27a0e;
-  --color-danger: #c2412d;
-  --color-info: #2e6f73;
+  --color-success: #8fe35b;
+  --color-warning: #f2c94c;
+  --color-danger: #f0604d;
+  --color-info: #7fd6e6;
 
-  /* Neutros (classes slate-*) e realces (blue-*) remapeados para a paleta Zolo, para que
-     componentes com cores fixas sigam a mesma identidade sem editar cada arquivo. */
-  --color-slate-50: #f6f8f4;
-  --color-slate-100: #eef3ec;
-  --color-slate-200: #dbe4dc;
-  --color-slate-300: #bdccc6;
-  --color-slate-400: #8a978d;
-  --color-slate-500: #6c7b70;
-  --color-slate-600: #576d5e;
-  --color-slate-700: #3d524a;
-  --color-slate-800: #25423d;
-  --color-slate-900: #132524;
-  --color-slate-950: #0b1a19;
-  --color-blue-50: #eef3ec;
-  --color-blue-100: #e3ebdf;
-  --color-blue-600: #123c3a;
-  --color-blue-700: #123c3a;
+  /* Escala slate invertida (texto claro, fundos escuros) para que todas as telas com classes
+     slate-* sigam o tema escuro sem editar arquivo por arquivo. O painel admin usa a classe
+     .legacy-slate para manter a escala original. */
+  --color-slate-50: #111a13;
+  --color-slate-100: #152018;
+  --color-slate-200: #1f2a22;
+  --color-slate-300: #3a4a3e;
+  --color-slate-400: #6f7d72;
+  --color-slate-500: #8a978c;
+  --color-slate-600: #a7b3a9;
+  --color-slate-700: #c4cec5;
+  --color-slate-800: #dde5dd;
+  --color-slate-900: #eef3ee;
+  --color-slate-950: #ffffff;
+  --color-blue-50: rgb(143 227 91 / 0.10);
+  --color-blue-100: rgb(143 227 91 / 0.16);
+  --color-blue-600: #8fe35b;
+  --color-blue-700: #8fe35b;
+
+  --color-emerald-50: rgb(143 227 91 / 0.10);
+  --color-emerald-200: rgb(143 227 91 / 0.30);
+  --color-emerald-600: #8fe35b;
+  --color-emerald-700: #8fe35b;
+  --color-emerald-900: #c8f5a9;
+  --color-red-50: rgb(255 122 107 / 0.10);
+  --color-red-200: rgb(255 122 107 / 0.30);
+  --color-red-600: #ff8a7c;
+  --color-red-700: #ff8a7c;
+  --color-red-900: #ffc2ba;
+  --color-rose-700: #ff8fa3;
+  --color-amber-50: rgb(242 201 76 / 0.10);
+  --color-amber-200: rgb(242 201 76 / 0.30);
+  --color-amber-600: #f2c94c;
+  --color-amber-700: #f2c94c;
+  --color-amber-900: #f7e0a0;
+  --color-cyan-50: rgb(127 214 230 / 0.10);
+  --color-cyan-200: rgb(127 214 230 / 0.30);
+  --color-cyan-700: #7fd6e6;
+  --color-cyan-900: #bdeaf2;
 
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;
@@ -94,6 +118,32 @@
     outline-offset: 2px;
   }
 }
+
+/* Painel admin: mantém a escala slate original (ele já era escuro por conta própria). */
+.legacy-slate {
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  --color-slate-950: #020617;
+}
+
+/* Gráficos (recharts) no tema escuro */
+.recharts-cartesian-axis-tick-value { fill: #8a978c; }
+.recharts-default-tooltip {
+  background-color: #0e1510 !important;
+  border: 1px solid #1f2a22 !important;
+  border-radius: 10px;
+  color: #eef3ee;
+}
+.recharts-tooltip-cursor { fill: rgb(255 255 255 / 0.04); }
+.recharts-legend-item-text { color: #a7b3a9 !important; }
 
 @layer utilities {
   .scrollbar-thin {

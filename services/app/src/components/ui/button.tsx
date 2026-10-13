@@ -5,15 +5,15 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
 export const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-background)] disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
         primary: "bg-[var(--color-primary)] text-[var(--color-primary-foreground)] hover:opacity-90",
         secondary: "bg-[var(--color-secondary)] text-[var(--color-secondary-foreground)] hover:opacity-90",
-        outline: "border border-[var(--color-border)] bg-white text-slate-900 hover:bg-slate-50",
+        outline: "border border-[var(--color-border)] bg-[var(--color-surface)] text-slate-900 hover:bg-slate-100",
         ghost: "text-slate-700 hover:bg-slate-100",
-        danger: "bg-[var(--color-danger)] text-white hover:opacity-90",
+        danger: "bg-[var(--color-danger)] text-[#fff] hover:opacity-90",
         link: "text-[var(--color-primary)] underline-offset-4 hover:underline",
       },
       size: {

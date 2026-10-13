@@ -19,7 +19,7 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const { user, role, tenantName } = useCurrentUser();
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-[var(--color-border)] bg-white px-4 lg:px-6">
+    <header className="flex h-16 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 lg:px-6">
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"
