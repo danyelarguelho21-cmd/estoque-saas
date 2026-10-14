@@ -16,6 +16,11 @@ export const tenantsApi = {
   listUsers: (params: { cursor?: string | undefined; limit?: number | undefined } = {}) =>
     api.get<Paginated<UserSummary>>(`/api/users${buildQuery(params)}`),
   inviteUser: (input: { name: string; email: string; role: Role }) =>
-    api.post<void>("/api/users/invite", input),
+    api.post<{ userId: string; inviteUrl?: string }>("/api/users/invite", input),
+  resendInvite: (userId: string) => api.post<{ inviteUrl: string }>(`/api/users/${userId}/resend-invite`, {}),
+  getInvite: (token: string) =>
+    api.get<{ name: string; email: string; tenantName: string }>(`/api/auth/invite?token=${encodeURIComponent(token)}`),
+  acceptInvite: (token: string, password: string) =>
+    api.post<{ email: string }>("/api/auth/invite/accept", { token, password }),
   updateUserRole: (userId: string, role: Role) => api.patch<void>(`/api/users/${userId}/role`, { role }),
 };

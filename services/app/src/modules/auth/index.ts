@@ -4,7 +4,15 @@
 export { handlers, auth, signIn, signOut } from "./auth.config";
 export { requireSession, requireRole, isSubscriptionBlocked, type SessionContext } from "./rbac";
 export { signupTenant, type SignupInput, type SignupResult } from "./signup";
-export { inviteUser, type InviteUserInput, type InviteUserResult } from "./invite";
+export {
+  inviteUser,
+  resendInvite,
+  getInviteInfo,
+  acceptInvite,
+  type InviteUserInput,
+  type InviteUserResult,
+  type InviteInfo,
+} from "./invite";
 export { hashPassword, verifyPassword } from "./password";
 export {
   getManagerPinConfigured,

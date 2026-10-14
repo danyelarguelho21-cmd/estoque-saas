@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Copy, MessageCircle, Plus, Send } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -59,15 +59,18 @@ function UsersPanel() {
   const [role, setRole] = useState<Role>("vendedor");
   const [submitting, setSubmitting] = useState(false);
   const [limitError, setLimitError] = useState(false);
+  const [inviteLink, setInviteLink] = useState<{ name: string; email: string; url: string } | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
 
   async function handleInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
     setLimitError(false);
     try {
-      await tenantsApi.inviteUser({ name, email, role });
-      notify({ title: "Convite enviado", variant: "success" });
+      const result = await tenantsApi.inviteUser({ name, email, role });
+      notify({ title: "Convite enviado por e-mail", variant: "success" });
       setOpen(false);
+      if (result?.inviteUrl) setInviteLink({ name, email, url: result.inviteUrl });
       setName("");
       setEmail("");
       setRole("vendedor");
@@ -78,6 +81,19 @@ function UsersPanel() {
       }
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleResend(user: { id: string; name: string; email: string }) {
+    setResendingId(user.id);
+    try {
+      const { inviteUrl } = await tenantsApi.resendInvite(user.id);
+      notify({ title: "Convite reenviado por e-mail", variant: "success" });
+      setInviteLink({ name: user.name, email: user.email, url: inviteUrl });
+    } catch {
+      notify({ title: "Não foi possível reenviar o convite", variant: "error" });
+    } finally {
+      setResendingId(null);
     }
   }
 
@@ -144,6 +160,7 @@ function UsersPanel() {
               <TableHead>E-mail</TableHead>
               <TableHead>Papel</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="text-right">Convite</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -164,12 +181,57 @@ function UsersPanel() {
                     {user.status === "active" ? "Ativo" : user.status === "invited" ? "Convite pendente" : "Desativado"}
                   </Badge>
                 </TableCell>
+                <TableCell className="text-right">
+                  {user.status === "invited" && (
+                    <Button size="sm" variant="outline" loading={resendingId === user.id} onClick={() => handleResend(user)}>
+                      <Send className="h-4 w-4" aria-hidden />
+                      Reenviar convite
+                    </Button>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       )}
       </Card>
+
+      <Dialog open={inviteLink !== null} onOpenChange={(v) => !v && setInviteLink(null)}>
+        <DialogContent
+          title="Convite enviado"
+          description={inviteLink ? `Enviamos o convite para ${inviteLink.email}. Se não chegar (veja também o spam), mande o link abaixo direto para ${inviteLink.name}.` : ""}
+        >
+          {inviteLink && (
+            <div className="flex flex-col gap-3">
+              <Input readOnly value={inviteLink.url} onFocus={(e) => e.currentTarget.select()} aria-label="Link do convite" />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(inviteLink.url);
+                    notify({ title: "Link copiado", variant: "success" });
+                  }}
+                >
+                  <Copy className="h-4 w-4" aria-hidden />
+                  Copiar link
+                </Button>
+                <Button asChild>
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(`Olá, ${inviteLink.name}! Você foi convidado(a) para o sistema Zolo. Crie sua senha por este link: ${inviteLink.url}`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <MessageCircle className="h-4 w-4" aria-hidden />
+                    Enviar pelo WhatsApp
+                  </a>
+                </Button>
+              </div>
+              <p className="text-xs text-[var(--color-muted)]">O link vale por 7 dias e só pode ser usado uma vez.</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
