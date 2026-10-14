@@ -32,6 +32,12 @@ interface SaleRow {
 
 const NO_CUSTOMER = "__none__";
 
+// Data de hoje no fuso do navegador, no formato do <input type="date"> (AAAA-MM-DD).
+function todayLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function newRow(): SaleRow {
   return { key: crypto.randomUUID(), product: null, quantity: "1", unitPrice: "", batchId: undefined };
 }
@@ -45,6 +51,7 @@ export default function NewSalePage() {
   const [storeId, setStoreId] = useState("");
   const [customerId, setCustomerId] = useState<string | undefined>(undefined);
   const [paymentMethodLabel, setPaymentMethodLabel] = useState("");
+  const [saleDate, setSaleDate] = useState(todayLocal);
   const [rows, setRows] = useState<SaleRow[]>([{ key: "sale-item-initial", product: null, quantity: "1", unitPrice: "", batchId: undefined }]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -69,6 +76,14 @@ export default function NewSalePage() {
       setError("Selecione a loja onde a venda está sendo feita.");
       return;
     }
+    if (!saleDate) {
+      setError("Informe a data da venda.");
+      return;
+    }
+    if (saleDate > todayLocal()) {
+      setError("A data da venda não pode ser no futuro.");
+      return;
+    }
     const items = rows.filter((r) => r.product);
     if (!items.length) {
       setError("Adicione ao menos um item à venda.");
@@ -81,6 +96,7 @@ export default function NewSalePage() {
         storeId,
         ...(customerId ? { customerId } : {}),
         ...(paymentMethodLabel ? { paymentMethodLabel } : {}),
+        saleDate,
         items: items.map((r) => ({
           productId: r.product!.id,
           quantity: Number(r.quantity) || 1,
@@ -123,7 +139,7 @@ export default function NewSalePage() {
                 </Alert>
               )}
 
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Loja" htmlFor="storeId" required>
                   <Select
                     id="storeId"
@@ -158,6 +174,15 @@ export default function NewSalePage() {
                       }
                     />
                   </div>
+                </Field>
+                <Field label="Data da venda" htmlFor="saleDate" required hint="Hoje por padrão — altere para lançar uma venda de outro dia">
+                  <Input
+                    id="saleDate"
+                    type="date"
+                    max={todayLocal()}
+                    value={saleDate}
+                    onChange={(e) => setSaleDate(e.target.value)}
+                  />
                 </Field>
                 <Field label="Forma de pagamento" htmlFor="paymentMethodLabel" hint="Informativo">
                   <Input id="paymentMethodLabel" placeholder="Ex.: Dinheiro, Pix" value={paymentMethodLabel} onChange={(e) => setPaymentMethodLabel(e.target.value)} />

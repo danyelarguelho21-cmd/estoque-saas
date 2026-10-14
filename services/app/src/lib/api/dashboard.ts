@@ -4,6 +4,8 @@ import type { AbcCurveItem, BestSeller, MonthlySalesSummary, StalledProduct, Tur
 export const dashboardApi = {
   getMonthlySales: (storeId?: string) =>
     api.get<MonthlySalesSummary[]>(`/api/dashboard/monthly-sales${buildQuery({ storeId })}`),
+  getRevenue: (params: { storeId?: string | undefined; from?: string | undefined; to?: string | undefined } = {}) =>
+    api.get<{ revenueCents: number; salesCount: number }>(`/api/dashboard/revenue${buildQuery(params)}`),
   getAbcCurve: (
     params: {
       storeId?: string | undefined;

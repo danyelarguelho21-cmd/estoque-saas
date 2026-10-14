@@ -12,7 +12,27 @@ export interface SaleInput {
   storeId: string;
   customerId?: string | undefined;
   paymentMethodLabel?: string | undefined;
+  /** Data da venda (AAAA-MM-DD). Hoje ou vazio = agora; data passada = venda lançada depois. */
+  saleDate?: string | undefined;
   items: SaleItemInput[];
+}
+
+const SALE_TIMEZONE = "America/Campo_Grande";
+
+function todayInSaleTimezone(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: SALE_TIMEZONE }).format(new Date());
+}
+
+// Converte a data escolhida no momento da venda. Hoje (ou vazio) usa o horário atual; uma data
+// passada fica ao meio-dia (horário de MS) daquele dia, para cair no dia certo em relatórios.
+function resolveSaleDate(saleDate: string | undefined): Date {
+  if (!saleDate) return new Date();
+  const today = todayInSaleTimezone();
+  if (saleDate > today) throw new ValidationError("A data da venda não pode ser no futuro.");
+  if (saleDate === today) return new Date();
+  const parsed = new Date(`${saleDate}T12:00:00-04:00`);
+  if (Number.isNaN(parsed.getTime())) throw new ValidationError("Data da venda inválida.");
+  return parsed;
 }
 
 export interface SaleResult {
@@ -29,6 +49,8 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
     throw new ValidationError("A venda precisa de ao menos um item.");
   }
 
+  const soldAt = resolveSaleDate(input.saleDate);
+
   return withTenant(tenantId, async (tx) => {
     const totalAmountCents = input.items.reduce((sum, i) => sum + i.quantity * i.unitPriceCents, 0);
 
@@ -41,6 +63,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
         totalAmountCents,
         paymentMethodLabel: input.paymentMethodLabel ?? null,
         status: "completed",
+        createdAt: soldAt,
       },
     });
 

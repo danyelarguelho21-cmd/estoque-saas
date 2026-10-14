@@ -214,6 +214,7 @@ export interface SaleInput {
   storeId: string;
   customerId?: string | null;
   paymentMethodLabel?: string;
+  saleDate?: string;
   items: SaleItemInput[];
 }
 

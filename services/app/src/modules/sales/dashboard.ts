@@ -46,6 +46,24 @@ export async function getMonthlySalesSummary(tenantId: string, storeId?: string)
 
 // api/openapi/dashboard.yaml#getAbcCurve — classifica produtos por contribuição acumulada de
 // receita ou quantidade (classe A = até 80% acumulado, B = até 95%, C = restante).
+// Faturamento do período (cards do Painel): soma das vendas concluídas entre from e to.
+export async function getRevenueSummary(tenantId: string, opts: DashboardDateFilter) {
+  return withTenant(tenantId, async (tx) => {
+    const agg = await tx.sale.aggregate({
+      where: {
+        status: "completed",
+        ...(opts.storeId ? { storeId: opts.storeId } : {}),
+        ...(opts.from || opts.to
+          ? { createdAt: { ...(opts.from ? { gte: new Date(opts.from) } : {}), ...(opts.to ? { lte: new Date(opts.to) } : {}) } }
+          : {}),
+      },
+      _sum: { totalAmountCents: true },
+      _count: { _all: true },
+    });
+    return { revenueCents: agg._sum.totalAmountCents ?? 0, salesCount: agg._count._all };
+  });
+}
+
 export async function getAbcCurve(tenantId: string, opts: DashboardDateFilter & { metric?: "revenue" | "quantity" | undefined }) {
   const metric = opts.metric ?? "revenue";
   return withTenant(tenantId, async (tx) => {
@@ -76,9 +94,12 @@ export async function getAbcCurve(tenantId: string, opts: DashboardDateFilter & 
 
     let cumulative = 0;
     return sorted.map(([productId, value]) => {
+      // Classe pelo acumulado ANTES do item: o primeiro produto é sempre "A", mesmo que sozinho
+      // passe de 80% (antes ele caía em "C" quando um único produto dominava as vendas).
+      const before = total > 0 ? (cumulative / total) * 100 : 0;
       cumulative += value;
       const cumulativePercentage = total > 0 ? (cumulative / total) * 100 : 0;
-      const klass = cumulativePercentage <= 80 ? "A" : cumulativePercentage <= 95 ? "B" : "C";
+      const klass = before < 80 ? "A" : before < 95 ? "B" : "C";
       return { productId, productName: nameById.get(productId) ?? "", value, cumulativePercentage, class: klass };
     });
   });

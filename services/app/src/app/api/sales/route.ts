@@ -15,6 +15,10 @@ const SaleInputSchema = z.object({
   storeId: z.string().uuid(),
   customerId: z.string().uuid().optional(),
   paymentMethodLabel: z.string().optional(),
+  saleDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Data da venda inválida.")
+    .optional(),
   items: z
     .array(
       z.object({
