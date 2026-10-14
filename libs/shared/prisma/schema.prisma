@@ -70,6 +70,9 @@ model Tenant {
   billingNeighborhood        String?  @map("billing_neighborhood")
   billingCity                String?  @map("billing_city")
   billingState               String?  @map("billing_state")
+  // Hash bcrypt da senha do gestor (PIN). Libera o faturamento para o papel "vendedor" por tempo
+  // limitado. NUNCA devolver ao cliente — ver stripTenantSecrets em modules/auth/tenant.ts.
+  managerPinHash             String?  @map("manager_pin_hash")
   createdAt                  DateTime @default(now()) @map("created_at")
 
   users         User[]

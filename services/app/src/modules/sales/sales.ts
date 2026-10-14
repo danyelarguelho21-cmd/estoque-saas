@@ -131,6 +131,8 @@ export interface ListSalesFilters {
   to?: string | undefined;
   cursor?: string | undefined;
   limit?: number | undefined;
+  /** Restringe às vendas de um vendedor (vendedor sem a senha do gestor só vê as próprias). */
+  sellerId?: string | undefined;
 }
 
 export async function listSales(tenantId: string, filters: ListSalesFilters) {
@@ -139,6 +141,7 @@ export async function listSales(tenantId: string, filters: ListSalesFilters) {
     const where = {
       status: "completed" as const,
       ...(filters.storeId ? { storeId: filters.storeId } : {}),
+      ...(filters.sellerId ? { sellerId: filters.sellerId } : {}),
       ...(filters.from || filters.to
         ? {
             createdAt: {

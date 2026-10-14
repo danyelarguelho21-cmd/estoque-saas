@@ -13,6 +13,12 @@ export function billingAddressToTenantData(address: BillingAddress) {
   };
 }
 
+// Remove segredos da linha do tenant antes de devolver para a API (hash do PIN do gestor).
+export function stripTenantSecrets<T extends { managerPinHash?: string | null }>(tenant: T) {
+  const { managerPinHash, ...rest } = tenant;
+  return { ...rest, managerPinConfigured: Boolean(managerPinHash) };
+}
+
 function pickBillingColumns(tenant: TenantAddressColumns) {
   const { billingZipcode, billingStreet, billingNumber, billingComplement, billingNeighborhood, billingCity, billingState } = tenant;
   return { billingZipcode, billingStreet, billingNumber, billingComplement, billingNeighborhood, billingCity, billingState };
@@ -32,14 +38,14 @@ export async function updateTenantBillingAddress(tenantId: string, userId: strin
       before: pickBillingColumns(before),
       after: pickBillingColumns(updated),
     });
-    return updated;
+    return stripTenantSecrets(updated);
   });
 }
 
 // api/openapi/tenants.yaml#getTenant / #updateTenant — tenant é RLS-scoped (usa a própria coluna
 // id, ver ADR-002), então withTenant() funciona normalmente aqui apesar de ser "a própria linha".
 export async function getTenant(tenantId: string) {
-  return withTenant(tenantId, (tx) => tx.tenant.findUniqueOrThrow({ where: { id: tenantId } }));
+  return withTenant(tenantId, async (tx) => stripTenantSecrets(await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } })));
 }
 
 export interface UpdateTenantInput {
@@ -66,7 +72,7 @@ export async function updateTenant(tenantId: string, userId: string, input: Upda
       before: { consolidatedStock: before.consolidatedStock, perishableTrackingEnabled: before.perishableTrackingEnabled },
       after: { consolidatedStock: updated.consolidatedStock, perishableTrackingEnabled: updated.perishableTrackingEnabled },
     });
-    return updated;
+    return stripTenantSecrets(updated);
   });
 }
 

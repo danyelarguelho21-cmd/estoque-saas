@@ -7,10 +7,22 @@ export { signupTenant, type SignupInput, type SignupResult } from "./signup";
 export { inviteUser, type InviteUserInput, type InviteUserResult } from "./invite";
 export { hashPassword, verifyPassword } from "./password";
 export {
+  getManagerPinConfigured,
+  setManagerPin,
+  unlockWithManagerPin,
+  lockManagerArea,
+  getManagerUnlockExpiry,
+  hasFinancialAccess,
+  requireFinancialAccess,
+  roleHasFinancialAccess,
+  UNLOCK_TTL_MS,
+} from "./manager-pin";
+export {
   getTenant,
   getTenantWithPlan,
   updateTenant,
   updateTenantBillingAddress,
+  stripTenantSecrets,
   type UpdateTenantInput,
 } from "./tenant";
 export { listStores, createStore, updateStore, type StoreInput, type StoreUpdateInput, type ListStoresFilters } from "./stores";

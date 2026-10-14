@@ -16,6 +16,7 @@ import { StoreFilter } from "@/components/features/store-filter";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { InfoTip } from "@/components/ui/info-tip";
+import { ManagerGate, ManagerUnlockedBar, useManagerAccess } from "@/components/features/manager-lock";
 import { dashboardApi } from "@/lib/api/dashboard";
 import { stockApi } from "@/lib/api/stock";
 import { AbcCurveChart } from "@/components/features/abc-curve-chart";
@@ -47,7 +48,7 @@ const ABC_HELP =
 const TURNOVER_HELP =
   "Giro de estoque = quanto vendeu nos últimos 90 dias dividido pelo estoque atual. Giro alto: o produto sai rápido, cuide da reposição. Giro baixo: o produto está parado, cuidado ao comprar mais.";
 
-export default function DashboardPage() {
+function DashboardContent() {
   const [storeId, setStoreId] = useState<string | undefined>(undefined);
   const [fromDay, setFromDay] = useState(startOfMonth);
   const [toDay, setToDay] = useState(() => isoDay(new Date()));
@@ -90,7 +91,7 @@ export default function DashboardPage() {
   });
 
   return (
-    <AppShell>
+    <>
       <div className="flex flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -342,6 +343,26 @@ export default function DashboardPage() {
             )}
           </Card>
         </div>
+      </div>
+    </>
+  );
+}
+
+export default function DashboardPage() {
+  const { allowed, isLoading } = useManagerAccess();
+  return (
+    <AppShell>
+      <div className="flex flex-col gap-4">
+        <ManagerUnlockedBar />
+        {!isLoading && !allowed && (
+          <div>
+            <h1 className="text-xl font-semibold text-slate-900">Painel</h1>
+            <p className="text-sm text-[var(--color-muted)]">Faturamento e indicadores da empresa</p>
+          </div>
+        )}
+        <ManagerGate>
+          <DashboardContent />
+        </ManagerGate>
       </div>
     </AppShell>
   );

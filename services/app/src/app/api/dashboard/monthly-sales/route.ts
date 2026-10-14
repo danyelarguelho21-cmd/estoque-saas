@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireRole } from "@/modules/auth";
+import { requireFinancialAccess } from "@/modules/auth";
 import { getMonthlySalesSummary } from "@/modules/sales";
 import { handleRoute, ok, parseQuery } from "@/lib/http";
 
@@ -7,7 +7,7 @@ const QuerySchema = z.object({ storeId: z.string().uuid().optional() });
 
 export async function GET(req: Request): Promise<Response> {
   return handleRoute(async () => {
-    const ctx = await requireRole("sales:read");
+    const ctx = await requireFinancialAccess();
     const query = parseQuery(new URL(req.url).searchParams, QuerySchema);
     return ok(await getMonthlySalesSummary(ctx.tenantId, query.storeId));
   });

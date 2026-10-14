@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireRole } from "@/modules/auth";
+import { hasFinancialAccess, requireRole } from "@/modules/auth";
 import { createSale, listSales } from "@/modules/sales";
 import { created, handleRoute, ok, parseJsonBody, parseQuery } from "@/lib/http";
 
@@ -35,7 +35,9 @@ export async function GET(req: Request): Promise<Response> {
   return handleRoute(async () => {
     const ctx = await requireRole("sales:read");
     const filters = parseQuery(new URL(req.url).searchParams, ListQuerySchema);
-    return ok(await listSales(ctx.tenantId, filters));
+    // Vendedor sem a senha do gestor só enxerga as próprias vendas (não o faturamento da loja).
+    const ownOnly = !(await hasFinancialAccess(ctx));
+    return ok({ ...(await listSales(ctx.tenantId, { ...filters, ...(ownOnly ? { sellerId: ctx.userId } : {}) })), ownOnly });
   });
 }
 

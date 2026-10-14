@@ -1,3 +1,4 @@
+import { stripTenantSecrets } from "@/modules/auth";
 import { ConflictError, NotFoundError, platformAdminPrisma } from "@estoque-saas/shared";
 import { signupTenant, type SignupInput } from "@/modules/auth";
 
@@ -123,11 +124,11 @@ export async function createTenantByAdmin(input: SignupInput, access: AdminTenan
 export async function suspendTenant(tenantId: string) {
   const tenant = await platformAdminPrisma.tenant.findUnique({ where: { id: tenantId } });
   if (!tenant) throw new NotFoundError("Tenant não encontrado.");
-  return platformAdminPrisma.tenant.update({ where: { id: tenantId }, data: { status: "suspended" } });
+  return stripTenantSecrets(await platformAdminPrisma.tenant.update({ where: { id: tenantId }, data: { status: "suspended" } }));
 }
 
 export async function reactivateTenant(tenantId: string) {
   const tenant = await platformAdminPrisma.tenant.findUnique({ where: { id: tenantId } });
   if (!tenant) throw new NotFoundError("Tenant não encontrado.");
-  return platformAdminPrisma.tenant.update({ where: { id: tenantId }, data: { status: "active" } });
+  return stripTenantSecrets(await platformAdminPrisma.tenant.update({ where: { id: tenantId }, data: { status: "active" } }));
 }

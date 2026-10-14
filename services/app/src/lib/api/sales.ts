@@ -10,7 +10,7 @@ export const salesApi = {
       from?: string | undefined;
       to?: string | undefined;
     } = {},
-  ) => api.get<Paginated<Sale> & { totalAmountCents: number }>(`/api/sales${buildQuery(params)}`),
+  ) => api.get<Paginated<Sale> & { totalAmountCents: number; ownOnly?: boolean }>(`/api/sales${buildQuery(params)}`),
   createSale: (input: SaleInput) => api.post<CreateSaleResult>("/api/sales", input),
   getSale: (saleId: string) => api.get<Sale>(`/api/sales/${saleId}`),
 

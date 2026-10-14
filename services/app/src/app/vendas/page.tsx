@@ -18,6 +18,7 @@ import { RoleGate } from "@/components/features/role-gate";
 import { salesApi } from "@/lib/api/sales";
 import { dashboardApi } from "@/lib/api/dashboard";
 import { MonthlySalesChart } from "@/components/features/monthly-sales-chart";
+import { ManagerGate, ManagerUnlockedBar, useManagerAccess } from "@/components/features/manager-lock";
 import { formatCentsToBRL, formatDateTimeBR } from "@/lib/format";
 
 export default function SalesPage() {
@@ -31,9 +32,11 @@ export default function SalesPage() {
     queryKey: ["sales", storeId, from, to, cursor],
     queryFn: () => salesApi.listSales({ storeId, from: from || undefined, to: to || undefined, cursor, limit: 20 }),
   });
+  const manager = useManagerAccess();
   const monthlySalesQuery = useQuery({
     queryKey: ["monthly-sales", storeId],
     queryFn: () => dashboardApi.getMonthlySales(storeId),
+    enabled: manager.allowed,
   });
 
   function goNext() {
@@ -76,10 +79,14 @@ export default function SalesPage() {
           </div>
         </div>
 
+        <ManagerUnlockedBar />
+
         <Card className="p-4">
           <h2 className="mb-3 text-base font-semibold text-slate-900">Comparativo de vendas</h2>
-          {monthlySalesQuery.data && <MonthlySalesChart data={monthlySalesQuery.data} />}
-          {monthlySalesQuery.isLoading && <PageSpinner />}
+          <ManagerGate compact>
+            {monthlySalesQuery.data && <MonthlySalesChart data={monthlySalesQuery.data} />}
+            {monthlySalesQuery.isLoading && <PageSpinner />}
+          </ManagerGate>
         </Card>
 
         <Card>
@@ -96,7 +103,10 @@ export default function SalesPage() {
               <span className="mb-1.5 block text-sm font-medium text-slate-700">Loja</span>
               <StoreFilter value={storeId} onChange={setStoreId} />
             </div>
-            {salesQuery.data && (
+            {salesQuery.data?.ownOnly && (
+              <p className="ml-auto text-xs text-[var(--color-muted)]">Mostrando só as suas vendas</p>
+            )}
+            {salesQuery.data && !salesQuery.data.ownOnly && (
               <div className="ml-auto text-right">
                 <p className="text-xs text-[var(--color-muted)]">Total no período</p>
                 <p className="text-lg font-semibold text-slate-900">{formatCentsToBRL(salesQuery.data.totalAmountCents)}</p>
