@@ -13,6 +13,14 @@ import {
 import { resolveInvoiceAmount } from "./invoice-amount";
 import { getPaymentProvider } from "./provider";
 
+
+// Teste grátis em andamento: assinar antes do fim do teste NÃO pode cortar o acesso enquanto a
+// primeira cobrança não é paga — o status continua "trialing" (até trialEndsAt) e o webhook de
+// pagamento promove para "active" normalmente. Sem teste ativo, segue "pending_payment".
+function statusUntilPaid(current: { status: string; trialEndsAt: Date | null } | null | undefined): "trialing" | "pending_payment" {
+  return current?.status === "trialing" && current.trialEndsAt && current.trialEndsAt > new Date() ? "trialing" : "pending_payment";
+}
+
 export async function getSubscription(tenantId: string) {
   return withTenant(tenantId, (tx) => tx.subscription.findFirst({ where: {}, orderBy: { createdAt: "desc" } }));
 }
@@ -102,7 +110,7 @@ export async function createSubscription(tenantId: string, input: CreateSubscrip
       where: { id: current.id },
       data: {
         planId: plan.id,
-        status: "pending_payment",
+        status: statusUntilPaid(current),
         paymentMethod: "pix_boleto",
       },
     });
@@ -158,7 +166,7 @@ async function createRecurringCardSubscription(tenantId: string, provider: Payme
           // (result.status já teria lançado PaymentRequiredError acima se "failed") —
           // "pending_payment", não "active"/"trialing", no caso contrário (sem período de teste,
           // ver rbac.ts).
-          status: result.status === "active" ? "active" : "pending_payment",
+          status: result.status === "active" ? "active" : statusUntilPaid(current),
           paymentMethod: "card",
           gatewaySubscriptionId: result.gatewaySubscriptionId,
           gatewayCustomerId: result.gatewayCustomerId,
@@ -272,7 +280,7 @@ async function createRecurringPixSubscription(tenantId: string, provider: Paymen
         where: { id: current.id },
         data: {
           planId: checkout.planId,
-          status: result.initialChargeStatus === "paid" ? "active" : "pending_payment",
+          status: result.initialChargeStatus === "paid" ? "active" : statusUntilPaid(current),
           paymentMethod: "pix_boleto",
           gatewaySubscriptionId: result.gatewaySubscriptionId,
           gatewayCustomerId: result.gatewayCustomerId,

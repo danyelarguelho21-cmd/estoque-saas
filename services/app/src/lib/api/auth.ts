@@ -14,7 +14,7 @@ export type SignupInput =
       adminEmail: string;
       password: string;
       planId: string;
-      billingAddress: BillingAddressInput;
+      billingAddress?: BillingAddressInput;
     }
   | {
       personType: "PF";
@@ -24,15 +24,17 @@ export type SignupInput =
       adminEmail: string;
       password: string;
       planId: string;
-      billingAddress: BillingAddressInput;
+      billingAddress?: BillingAddressInput;
     };
 
 export interface SignupResult {
   tenantId: string;
   userId: string;
+  trialEndsAt?: string | null;
 }
 
 export const authApi = {
   signup: (input: SignupInput) => api.post<SignupResult>("/api/auth/signup", input),
+  getSignupConfig: () => api.get<{ trialDays: number }>("/api/auth/signup-config"),
   login: (input: { email: string; password: string }) => api.post<{ status: "ok" }>("/api/auth/login", input),
 };

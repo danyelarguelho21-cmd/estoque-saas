@@ -73,7 +73,9 @@ export default function SubscriptionPage() {
   // Fatura aberta sem QR Code (ex.: recusada pelo gateway por falta de endereço) também precisa de
   // uma nova cobrança — o backend substitui a assinatura pendente na Vindi.
   const pendingInvoiceWithoutPix = pendingInvoice?.paymentMethod === "pix" && !pendingInvoice.pixQrCode;
-  const canGeneratePix = subscriptionQuery.data?.status === "pending_payment" && (!pendingInvoice || pendingInvoiceWithoutPix);
+  const canGeneratePix =
+    (subscriptionQuery.data?.status === "pending_payment" || subscriptionQuery.data?.status === "trialing") &&
+    (!pendingInvoice || pendingInvoiceWithoutPix);
 
   async function retryPixCheckout() {
     const planId = subscriptionQuery.data?.planId;

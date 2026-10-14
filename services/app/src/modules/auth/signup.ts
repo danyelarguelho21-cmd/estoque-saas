@@ -16,11 +16,15 @@ export interface SignupInput {
   // Opcional só para cadastros feitos pelo dono da plataforma no painel /admin — o cliente informa
   // o endereço depois, em /assinatura, se for pagar via Pix.
   billingAddress?: BillingAddress | undefined;
+  /** Dias de teste grátis (cadastro do site). 0/ausente = já começa aguardando pagamento. */
+  trialDays?: number | undefined;
 }
 
 export interface SignupResult {
   tenantId: string;
   userId: string;
+  /** Fim do teste grátis (ISO), quando o cadastro começou em teste. */
+  trialEndsAt: string | null;
 }
 
 // Onboarding self-service (BRD Epic 1 / api/openapi/auth.yaml#signup):
@@ -39,6 +43,8 @@ export async function signupTenant(input: SignupInput): Promise<SignupResult> {
   const tenantId = randomUUID();
   const userId = randomUUID();
   const passwordHash = await hashPassword(input.password);
+  const trialDays = Math.max(0, Math.floor(input.trialDays ?? 0));
+  const trialEndsAt = trialDays > 0 ? new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000) : null;
 
   try {
     await withTenant(tenantId, async (tx) => {
@@ -78,7 +84,10 @@ export async function signupTenant(input: SignupInput): Promise<SignupResult> {
         data: {
           tenantId,
           planId: input.planId,
-          status: "pending_payment",
+          // Com teste grátis (cadastro pelo site, SIGNUP_TRIAL_DAYS): "trialing" até trialEndsAt —
+          // rbac.ts libera o acesso até essa data e depois volta sozinho para "pending_payment".
+          status: trialEndsAt ? "trialing" : "pending_payment",
+          trialEndsAt,
           paymentMethod: "pix_boleto",
         },
       });
@@ -101,8 +110,9 @@ export async function signupTenant(input: SignupInput): Promise<SignupResult> {
       <p>Olá, ${escapeHtml(input.adminName)}!</p>
       <p>Sua conta na Zolo foi criada com sucesso para <strong>${escapeHtml(input.companyName)}</strong>.</p>
       <p>Já pode acessar o sistema e começar a configurar seu estoque.</p>
+      ${trialEndsAt ? `<p>Seu <strong>teste grátis</strong> vai até ${trialEndsAt.toLocaleDateString("pt-BR", { timeZone: "America/Campo_Grande" })}. Aproveite!</p>` : ""}
     `,
   });
 
-  return { tenantId, userId };
+  return { tenantId, userId, trialEndsAt: trialEndsAt?.toISOString() ?? null };
 }

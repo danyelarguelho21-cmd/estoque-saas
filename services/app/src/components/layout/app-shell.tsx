@@ -5,6 +5,7 @@ import * as RadixDialog from "@radix-ui/react-dialog";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { FloatingWhatsAppButton } from "@/components/layout/whatsapp-support";
+import { TrialBanner } from "@/components/layout/trial-banner";
 
 /** Shell autenticado do produto (tenant): sidebar fixa em desktop, drawer em mobile. */
 export function AppShell({ children }: { children: ReactNode }) {
@@ -29,7 +30,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Header onOpenMobileNav={() => setMobileNavOpen(true)} />
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          <div className="mx-auto w-full max-w-7xl pb-16">{children}</div>
+          <div className="mx-auto w-full max-w-7xl pb-16">
+            <TrialBanner />
+            {children}
+          </div>
         </main>
       </div>
       <FloatingWhatsAppButton />

@@ -1,6 +1,7 @@
 import { signupTenant } from "@/modules/auth";
 import { created, handleRoute, parseJsonBody } from "@/lib/http";
 import { RATE_LIMITS, checkRateLimit, clientIp } from "@/lib/rate-limit";
+import { signupTrialDays } from "@/lib/trial";
 import { SignupSchema } from "@/lib/signup-schema";
 
 // security-engineer finding H-5: endpoint público, sem sessão, cria um tenant INTEIRO por
@@ -22,6 +23,7 @@ export async function POST(req: Request): Promise<Response> {
       password: input.password,
       planId: input.planId,
       billingAddress: input.billingAddress,
+      trialDays: signupTrialDays(),
     });
     return created(result);
   });

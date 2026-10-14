@@ -24,7 +24,8 @@ export const SignupSchema = z.discriminatedUnion("personType", [
     adminEmail: z.string().email(),
     password: z.string().min(8),
     planId: z.string().uuid(),
-    billingAddress: BillingAddressSchema,
+    // Opcional: no teste grátis o endereço é pedido depois, em /assinatura, antes do 1º Pix.
+    billingAddress: BillingAddressSchema.optional(),
   }),
   z.object({
     personType: z.literal("PF"),
@@ -34,7 +35,8 @@ export const SignupSchema = z.discriminatedUnion("personType", [
     adminEmail: z.string().email(),
     password: z.string().min(8),
     planId: z.string().uuid(),
-    billingAddress: BillingAddressSchema,
+    // Opcional: no teste grátis o endereço é pedido depois, em /assinatura, antes do 1º Pix.
+    billingAddress: BillingAddressSchema.optional(),
   }),
 ]);
 

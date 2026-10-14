@@ -29,6 +29,9 @@ function SignupPageInner() {
   const { update: refreshSession } = useSession();
   const plansQuery = useQuery({ queryKey: ["plans"], queryFn: billingApi.listPlans });
   const plans = plansQuery.data ?? [];
+  const signupConfigQuery = useQuery({ queryKey: ["signup-config"], queryFn: authApi.getSignupConfig, staleTime: 60_000 });
+  const trialDays = signupConfigQuery.data?.trialDays ?? 0;
+  const hasTrial = trialDays > 0;
 
   const [step, setStep] = useState<1 | 2>(1);
   const [planId, setPlanId] = useState<string | null>(null);
@@ -76,19 +79,21 @@ function SignupPageInner() {
       );
       return;
     }
-    const address = validateBillingAddress(billingAddress);
-    if (!address.ok) {
+    // No teste grátis o endereço não é pedido agora (fica para quando for pagar, em /assinatura).
+    const address = hasTrial ? null : validateBillingAddress(billingAddress);
+    if (address && !address.ok) {
       setBillingAddressErrors(address.errors);
       setError("Confira o endereço de cobrança — ele é exigido para gerar o Pix da assinatura.");
       return;
     }
+    const billing = address?.ok ? { billingAddress: address.data } : {};
     setBillingAddressErrors({});
     setSubmitting(true);
     try {
-      await authApi.signup(
+      const signupResult = await authApi.signup(
         personType === "PJ"
-          ? { personType: "PJ", companyName, cnpj, adminName, adminEmail, password, planId: selectedPlanId, billingAddress: address.data }
-          : { personType: "PF", companyName, cpf, adminName, adminEmail, password, planId: selectedPlanId, billingAddress: address.data },
+          ? { personType: "PJ", companyName, cnpj, adminName, adminEmail, password, planId: selectedPlanId, ...billing }
+          : { personType: "PF", companyName, cpf, adminName, adminEmail, password, planId: selectedPlanId, ...billing },
       );
       try {
         await authApi.login({ email: adminEmail, password });
@@ -96,6 +101,11 @@ function SignupPageInner() {
       } catch {
         setError("Empresa criada, mas não foi possível entrar automaticamente. Faça login manualmente.");
         router.push("/entrar");
+        return;
+      }
+      if (signupResult.trialEndsAt) {
+        // Teste grátis: entra direto no sistema, sem forma de pagamento agora.
+        router.push("/painel");
         return;
       }
       setStep(2);
@@ -167,16 +177,18 @@ function SignupPageInner() {
     }
   }
 
-  if (plansQuery.isLoading) {
+  if (plansQuery.isLoading || signupConfigQuery.isLoading) {
     return <PageSpinner label="Carregando planos…" />;
   }
 
   return (
     <AuthShell
-      title={step === 1 ? "Criar sua empresa" : "Forma de pagamento"}
+      title={step === 1 ? (hasTrial ? `Teste grátis por ${trialDays} dias` : "Criar sua empresa") : "Forma de pagamento"}
       description={
         step === 1
-          ? "Onboarding self-service — leva menos de 2 minutos"
+          ? hasTrial
+            ? "Sem cartão de crédito. Escolha o plano que quer testar — você só paga se continuar."
+            : "Onboarding self-service — leva menos de 2 minutos"
           : `Plano selecionado: ${plans.find((p) => p.id === selectedPlanId)?.name ?? ""}`
       }
       wide
@@ -278,15 +290,22 @@ function SignupPageInner() {
             </Field>
           </div>
 
+          {!hasTrial && (
           <div>
             <p className="mb-1 text-sm font-medium text-slate-900">Endereço de cobrança</p>
             <p className="mb-3 text-xs text-[var(--color-muted)]">Usado na fatura da assinatura (obrigatório para pagamento via Pix).</p>
             <BillingAddressFields value={billingAddress} onChange={setBillingAddress} errors={billingAddressErrors} />
           </div>
+          )}
 
           <Button type="submit" loading={submitting} className="w-full">
-            Continuar
+            {hasTrial ? `Começar meu teste grátis de ${trialDays} dias` : "Continuar"}
           </Button>
+          {hasTrial && (
+            <p className="-mt-3 text-center text-xs text-[var(--color-muted)]">
+              Sem cartão. No fim do teste, é só escolher Pix ou cartão para continuar usando.
+            </p>
+          )}
         </form>
       )}
 
