@@ -17,6 +17,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { InfoTip } from "@/components/ui/info-tip";
 import { ManagerGate, ManagerUnlockedBar, useManagerAccess } from "@/components/features/manager-lock";
+import { DifferenceBadge } from "@/components/features/cash/cash-shared";
+import { cashApi } from "@/lib/api/cash";
 import { dashboardApi } from "@/lib/api/dashboard";
 import { stockApi } from "@/lib/api/stock";
 import { AbcCurveChart } from "@/components/features/abc-curve-chart";
@@ -74,6 +76,10 @@ function DashboardContent() {
   const bestSellersQuery = useQuery({
     queryKey: ["dashboard", "best-sellers", storeId, fromDay, toDay],
     queryFn: () => dashboardApi.getBestSellers({ storeId, limit: 10, ...period }),
+  });
+  const cashTodayQuery = useQuery({
+    queryKey: ["cash", "today", storeId],
+    queryFn: () => cashApi.today(storeId),
   });
   const revenueQuery = useQuery({
     queryKey: ["dashboard", "revenue", storeId, fromDay, toDay],
@@ -158,6 +164,52 @@ function DashboardContent() {
             hint="Dentro da janela configurada"
           />
         </div>
+
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle>Caixa de hoje</CardTitle>
+            <Link href="/vendas/caixa" className="text-sm text-[var(--color-primary)] hover:underline">
+              Ir para o caixa
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {cashTodayQuery.isLoading ? (
+              <PageSpinner />
+            ) : !cashTodayQuery.data?.length ? (
+              <p className="text-sm text-[var(--color-muted)]">Nenhuma loja cadastrada.</p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {cashTodayQuery.data.map((c) => (
+                  <div key={c.storeId} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] p-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-900">{c.storeName}</p>
+                      <p className="text-xs text-[var(--color-muted)]">
+                        {c.status === "open"
+                          ? `Aberto desde ${c.openedAt ? formatDateTimeBR(c.openedAt) : "—"}`
+                          : c.status === "closed"
+                            ? `Fechado em ${c.closedAt ? formatDateTimeBR(c.closedAt) : "—"}`
+                            : "Caixa não foi aberto hoje"}
+                      </p>
+                    </div>
+                    {c.status === "open" ? (
+                      <Badge variant="success">Aberto</Badge>
+                    ) : c.status === "closed" ? (
+                      c.sessionId ? (
+                        <Link href={`/vendas/caixa/${c.sessionId}`}>
+                          <DifferenceBadge cents={c.totalDifferenceCents} />
+                        </Link>
+                      ) : (
+                        <DifferenceBadge cents={c.totalDifferenceCents} />
+                      )
+                    ) : (
+                      <Badge variant="neutral">Não aberto</Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card>

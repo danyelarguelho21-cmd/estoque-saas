@@ -137,7 +137,7 @@ const PLANS: { name: string; tagline: string; priceCents: number; items: string[
     name: "Básico",
     tagline: "Pra quem tem uma loja e quer sair da planilha.",
     priceCents: 14990,
-    items: ["Até 100 produtos diferentes", "2 usuários", "1 loja", "Controle de validade/lote (FEFO)", "Importação por CSV", "Importação de NF-e do fornecedor"],
+    items: ["Até 100 produtos diferentes", "7 usuários", "1 loja", "Controle de validade/lote (FEFO)", "Importação por CSV", "Importação de NF-e do fornecedor"],
   },
   {
     name: "Pro",

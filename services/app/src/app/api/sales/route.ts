@@ -2,6 +2,7 @@ import { z } from "zod";
 import { hasFinancialAccess, requireRole } from "@/modules/auth";
 import { createSale, listSales } from "@/modules/sales";
 import { created, handleRoute, ok, parseJsonBody, parseQuery } from "@/lib/http";
+import { PAYMENT_METHODS } from "@/lib/payment-methods";
 
 const ListQuerySchema = z.object({
   cursor: z.string().optional(),
@@ -14,7 +15,8 @@ const ListQuerySchema = z.object({
 const SaleInputSchema = z.object({
   storeId: z.string().uuid(),
   customerId: z.string().uuid().optional(),
-  paymentMethodLabel: z.string().optional(),
+  paymentMethod: z.enum(PAYMENT_METHODS).optional(),
+  paymentMethodLabel: z.string().max(100).optional(),
   saleDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Data da venda inválida.")

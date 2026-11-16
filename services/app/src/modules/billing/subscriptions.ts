@@ -133,6 +133,7 @@ async function createRecurringCardSubscription(tenantId: string, provider: Payme
   if (!current) {
     throw new NotFoundError("Assinatura não encontrada para este tenant.");
   }
+  const previousUnpaidGatewayId = current.status !== "active" && current.gatewaySubscriptionId ? current.gatewaySubscriptionId : null;
 
   let result;
   try {
@@ -157,7 +158,11 @@ async function createRecurringCardSubscription(tenantId: string, provider: Payme
   }
 
   try {
-    return await withTenant(tenantId, async (tx) => {
+    const persisted = await withTenant(tenantId, async (tx) => {
+      // Trocou do Pix (ainda não pago) para o cartão: as faturas Pix em aberto deixam de valer.
+      if (previousUnpaidGatewayId) {
+        await tx.invoice.updateMany({ where: { subscriptionId: current.id, status: { in: ["pending", "overdue"] } }, data: { status: "failed" } });
+      }
       const updated = await tx.subscription.update({
         where: { id: current.id },
         data: {
@@ -192,6 +197,15 @@ async function createRecurringCardSubscription(tenantId: string, provider: Payme
       await recordAudit(tx, { tenantId, userId: null, entityType: "subscription", entityId: updated.id, action: "update", after: { status: updated.status, paymentMethod: "card" } });
       return updated;
     });
+    // Cancela na Vindi a assinatura Pix antiga (não paga), para não gerar cobrança em dobro.
+    if (previousUnpaidGatewayId && previousUnpaidGatewayId !== result.gatewaySubscriptionId) {
+      try {
+        await provider.cancelSubscription(previousUnpaidGatewayId);
+      } catch (cancelErr) {
+        console.error(`[billing] falha ao cancelar a assinatura Pix anterior ${previousUnpaidGatewayId} (tenant ${tenantId}):`, cancelErr instanceof Error ? cancelErr.message : cancelErr);
+      }
+    }
+    return persisted;
   } catch (err) {
     await cancelUnpersistedSubscription(provider, result.gatewaySubscriptionId, tenantId);
     throw err;
@@ -240,7 +254,7 @@ async function createRecurringPixSubscription(tenantId: string, provider: Paymen
   //   senão cada clique deixava mais uma assinatura/fatura em aberto na Vindi. As faturas locais
   //   são marcadas "failed" ANTES do cancelamento: o webhook bill_canceled que chega depois vira
   //   no-op (charge.failed só age em fatura ainda não failed) e não rebaixa a assinatura.
-  if (current.gatewaySubscriptionId && current.status === "pending_payment") {
+  if (current.gatewaySubscriptionId && (current.status === "pending_payment" || current.status === "trialing")) {
     if (openInvoice?.pixQrCode) return current;
     await withTenant(tenantId, (tx) =>
       tx.invoice.updateMany({ where: { subscriptionId: current.id, status: { in: ["pending", "overdue"] } }, data: { status: "failed" } }),

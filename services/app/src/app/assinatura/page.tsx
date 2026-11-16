@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, QrCode } from "lucide-react";
+import { Check, Copy, CreditCard, QrCode } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,8 @@ import { PageSpinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PlanCard } from "@/components/features/plan-card";
 import { RoleGate } from "@/components/features/role-gate";
+import { CardPaymentForm } from "@/components/features/card-payment-form";
+import { cn } from "@/lib/utils";
 import { BillingAddressFields, type BillingAddressErrors } from "@/components/features/billing-address-fields";
 import { useToast } from "@/components/ui/toast";
 import { billingApi } from "@/lib/api/billing";
@@ -65,6 +67,7 @@ export default function SubscriptionPage() {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [billingAddress, setBillingAddress] = useState<BillingAddressInput>(EMPTY_BILLING_ADDRESS);
   const [billingAddressErrors, setBillingAddressErrors] = useState<BillingAddressErrors>({});
+  const [payWith, setPayWith] = useState<"pix" | "card">("pix");
 
   const pendingInvoice = invoicesQuery.data?.items.find((invoice) => invoice.status === "pending" || invoice.status === "overdue");
   // Tenants criados antes da coleta de endereço: o Pix da Vindi é recusado sem ele, então o
@@ -73,6 +76,9 @@ export default function SubscriptionPage() {
   // Fatura aberta sem QR Code (ex.: recusada pelo gateway por falta de endereço) também precisa de
   // uma nova cobrança — o backend substitui a assinatura pendente na Vindi.
   const pendingInvoiceWithoutPix = pendingInvoice?.paymentMethod === "pix" && !pendingInvoice.pixQrCode;
+  const status = subscriptionQuery.data?.status;
+  const needsPayment = status === "pending_payment" || status === "trialing" || status === "past_due";
+  const pixReady = Boolean(pendingInvoice?.paymentMethod === "pix" && pendingInvoice.pixQrCode);
   const canGeneratePix =
     (subscriptionQuery.data?.status === "pending_payment" || subscriptionQuery.data?.status === "trialing") &&
     (!pendingInvoice || pendingInvoiceWithoutPix);
@@ -206,6 +212,7 @@ export default function SubscriptionPage() {
               <Card key={invoice.id} className="border-2 border-[var(--color-primary)]">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><QrCode className="h-5 w-5" aria-hidden /> Pague sua assinatura via Pix</CardTitle>
+                  <p className="text-sm text-[var(--color-muted)]">Prefere cartão de crédito? Escolha <b>Cartão de crédito</b> logo abaixo.</p>
                 </CardHeader>
                 <CardContent className="grid gap-5 sm:grid-cols-[220px_1fr]">
                   <div className="flex min-h-52 items-center justify-center rounded-lg bg-white p-3">
@@ -227,25 +234,81 @@ export default function SubscriptionPage() {
               </Card>
             ))}
 
-          {canGeneratePix && (
+          {needsPayment && subscriptionQuery.data && (
             <Card>
-              <CardContent className="flex flex-col items-start gap-3 pt-6">
-                <p className="text-sm text-[var(--color-muted)]">
-                  {pendingInvoiceWithoutPix
-                    ? "A fatura em aberto não tem QR Code Pix. Gere uma nova cobrança para pagar via Pix."
-                    : "Ainda não há cobrança Pix disponível para esta assinatura."}
-                </p>
-                {needsBillingAddress && (
-                  <div className="w-full">
-                    <p className="mb-1 text-sm font-medium text-slate-900">Endereço de cobrança</p>
-                    <p className="mb-3 text-xs text-[var(--color-muted)]">Obrigatório para gerar o Pix da assinatura.</p>
-                    <BillingAddressFields value={billingAddress} onChange={setBillingAddress} errors={billingAddressErrors} idPrefix="assinatura-billing" />
+              <CardHeader>
+                <CardTitle>Pague no Pix ou no cartão de crédito</CardTitle>
+                <p className="text-sm text-[var(--color-muted)]">Escolha a forma de pagamento da assinatura. Você pode trocar quando quiser.</p>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {([
+                    { key: "pix", label: "Pix", hint: "Pagamento na hora pelo app do banco", Icon: QrCode },
+                    { key: "card", label: "Cartão de crédito", hint: "Cobrança mensal automática", Icon: CreditCard },
+                  ] as const).map(({ key, label, hint, Icon }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setPayWith(key)}
+                      aria-pressed={payWith === key}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg border-2 p-4 text-left transition-colors",
+                        payWith === key ? "border-[var(--color-primary)] bg-blue-50" : "border-[var(--color-border)] hover:border-slate-300",
+                      )}
+                    >
+                      <Icon className="h-5 w-5 text-[var(--color-primary)]" aria-hidden />
+                      <span>
+                        <span className="block text-sm font-semibold text-slate-900">{label}</span>
+                        <span className="block text-xs text-[var(--color-muted)]">{hint}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {payWith === "pix" && (
+                  <div className="flex flex-col items-start gap-3">
+                    {pixReady && !canGeneratePix ? (
+                      <p className="text-sm text-[var(--color-muted)]">Seu QR Code Pix está pronto logo acima — é só pagar pelo app do banco. A liberação é automática.</p>
+                    ) : (
+                      <>
+                        <p className="text-sm text-[var(--color-muted)]">
+                          {pendingInvoiceWithoutPix
+                            ? "A fatura em aberto não tem QR Code Pix. Gere uma nova cobrança para pagar via Pix."
+                            : "Gere a cobrança e pague pelo app do banco com QR Code ou Pix copia e cola."}
+                        </p>
+                        {needsBillingAddress && (
+                          <div className="w-full">
+                            <p className="mb-1 text-sm font-medium text-slate-900">Endereço de cobrança</p>
+                            <p className="mb-3 text-xs text-[var(--color-muted)]">Obrigatório para gerar o Pix da assinatura.</p>
+                            <BillingAddressFields value={billingAddress} onChange={setBillingAddress} errors={billingAddressErrors} idPrefix="assinatura-billing" />
+                          </div>
+                        )}
+                        {checkoutError && <Alert variant="danger">{checkoutError}</Alert>}
+                        {canGeneratePix && (
+                          <Button type="button" loading={retryingCheckout} disabled={tenantQuery.isLoading} onClick={() => void retryPixCheckout()}>
+                            {needsBillingAddress ? "Salvar endereço e gerar cobrança Pix" : pendingInvoiceWithoutPix ? "Gerar nova cobrança Pix" : "Gerar cobrança Pix"}
+                          </Button>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
-                {checkoutError && <Alert variant="danger">{checkoutError}</Alert>}
-                <Button type="button" loading={retryingCheckout} disabled={tenantQuery.isLoading} onClick={() => void retryPixCheckout()}>
-                  {needsBillingAddress ? "Salvar endereço e gerar cobrança Pix" : pendingInvoiceWithoutPix ? "Gerar nova cobrança Pix" : "Gerar cobrança Pix"}
-                </Button>
+
+                {payWith === "card" && (
+                  <CardPaymentForm
+                    planId={subscriptionQuery.data.planId}
+                    onPaid={async (active) => {
+                      notify({
+                        title: active ? "Pagamento aprovado — assinatura ativa!" : "Cartão cadastrado — aguardando confirmação do pagamento",
+                        variant: "success",
+                      });
+                      await Promise.all([
+                        queryClient.invalidateQueries({ queryKey: ["subscription"] }),
+                        queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+                      ]);
+                    }}
+                  />
+                )}
               </CardContent>
             </Card>
           )}

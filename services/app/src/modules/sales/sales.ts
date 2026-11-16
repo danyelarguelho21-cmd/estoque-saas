@@ -1,5 +1,6 @@
 import { ValidationError, recordAudit, withTenant } from "@estoque-saas/shared";
 import { getCurrentStock, lockStockRow, resolveExitLines } from "@/modules/stock";
+import type { PaymentMethod } from "@/lib/payment-methods";
 
 export interface SaleItemInput {
   productId: string;
@@ -11,6 +12,9 @@ export interface SaleItemInput {
 export interface SaleInput {
   storeId: string;
   customerId?: string | undefined;
+  /** Forma de pagamento estruturada (lista fixa) — usada no fechamento de caixa. */
+  paymentMethod?: PaymentMethod | undefined;
+  /** Texto livre legado — só mantido para compatibilidade com integrações antigas. */
   paymentMethodLabel?: string | undefined;
   /** Data da venda (AAAA-MM-DD). Hoje ou vazio = agora; data passada = venda lançada depois. */
   saleDate?: string | undefined;
@@ -61,6 +65,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
         customerId: input.customerId ?? null,
         sellerId: userId,
         totalAmountCents,
+        paymentMethod: input.paymentMethod ?? null,
         paymentMethodLabel: input.paymentMethodLabel ?? null,
         status: "completed",
         createdAt: soldAt,
@@ -118,7 +123,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
       entityType: "sale",
       entityId: sale.id,
       action: "create",
-      after: { storeId: input.storeId, totalAmountCents, itemCount: input.items.length },
+      after: { storeId: input.storeId, totalAmountCents, itemCount: input.items.length, paymentMethod: input.paymentMethod ?? null },
     });
 
     return { saleId: sale.id, totalAmountCents };

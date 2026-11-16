@@ -21,6 +21,7 @@ import { tenantsApi } from "@/lib/api/tenants";
 import { ApiError } from "@/lib/api/client";
 import { formatCentsToBRL } from "@/lib/format";
 import type { Product } from "@/lib/api/types";
+import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS, type PaymentMethod } from "@/lib/payment-methods";
 
 interface SaleRow {
   key: string;
@@ -50,7 +51,7 @@ export default function NewSalePage() {
 
   const [storeId, setStoreId] = useState("");
   const [customerId, setCustomerId] = useState<string | undefined>(undefined);
-  const [paymentMethodLabel, setPaymentMethodLabel] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | "">("");
   const [saleDate, setSaleDate] = useState(todayLocal);
   const [rows, setRows] = useState<SaleRow[]>([{ key: "sale-item-initial", product: null, quantity: "1", unitPrice: "", batchId: undefined }]);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +96,7 @@ export default function NewSalePage() {
       const sale = await salesApi.createSale({
         storeId,
         ...(customerId ? { customerId } : {}),
-        ...(paymentMethodLabel ? { paymentMethodLabel } : {}),
+        ...(paymentMethod ? { paymentMethod } : {}),
         saleDate,
         items: items.map((r) => ({
           productId: r.product!.id,
@@ -184,8 +185,14 @@ export default function NewSalePage() {
                     onChange={(e) => setSaleDate(e.target.value)}
                   />
                 </Field>
-                <Field label="Forma de pagamento" htmlFor="paymentMethodLabel" hint="Informativo">
-                  <Input id="paymentMethodLabel" placeholder="Ex.: Dinheiro, Pix" value={paymentMethodLabel} onChange={(e) => setPaymentMethodLabel(e.target.value)} />
+                <Field label="Forma de pagamento" htmlFor="paymentMethod" hint="Usada no fechamento do caixa">
+                  <Select
+                    id="paymentMethod"
+                    value={paymentMethod || undefined}
+                    onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}
+                    options={PAYMENT_METHODS.map((m) => ({ value: m, label: PAYMENT_METHOD_LABELS[m] }))}
+                    placeholder="Selecione"
+                  />
                 </Field>
               </div>
 

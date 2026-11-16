@@ -19,7 +19,7 @@ const plans = [
     name: "Básico",
     priceCents: 14990,
     maxProducts: 100,
-    maxUsers: 2,
+    maxUsers: 7,
     maxStores: 1,
     features: { perishableTracking: true, csvImport: true, nfeImport: true },
   },

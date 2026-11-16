@@ -213,6 +213,7 @@ export interface SaleItemInput {
 export interface SaleInput {
   storeId: string;
   customerId?: string | null;
+  paymentMethod?: import("@/lib/payment-methods").PaymentMethod;
   paymentMethodLabel?: string;
   saleDate?: string;
   items: SaleItemInput[];
