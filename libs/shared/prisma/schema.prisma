@@ -85,7 +85,7 @@ model Tenant {
   invoices      Invoice[]
   auditLogs     AuditLog[]
   alertsConfig  StockAlertsConfig?
-  cashSessions  CashSession[]
+  cashClosings  CashClosing[]
 
   @@map("tenants")
 }
@@ -113,7 +113,7 @@ model Store {
   type      String   @default("loja")
   address   String?
   createdAt DateTime @default(now()) @map("created_at")
-  cashSessions CashSession[]
+  cashClosings CashClosing[]
 
   @@map("stores")
 }
@@ -396,50 +396,23 @@ model AuditLog {
   @@map("audit_log")
 }
 
-// Fechamento de caixa diário por loja (migration 20261109130000_cash_register).
-// ATENÇÃO: o índice único PARCIAL "cash_sessions_one_open_per_store" (um caixa aberto por loja,
-// WHERE status = 'open') existe só na migration SQL — a DSL do Prisma não expressa índice parcial.
-// Se `prisma migrate dev` gerar um DROP INDEX desse índice, remova essa linha da migration gerada.
-model CashSession {
-  id                  String    @id @default(uuid()) @db.Uuid
-  tenantId            String    @map("tenant_id") @db.Uuid
-  tenant              Tenant    @relation(fields: [tenantId], references: [id])
-  storeId             String    @map("store_id") @db.Uuid
-  store               Store     @relation(fields: [storeId], references: [id])
-  status              String    @default("open") // "open" | "closed"
-  openingAmountCents  Int       @map("opening_amount_cents")
-  openedBy            String    @map("opened_by") @db.Uuid
-  openedAt            DateTime  @default(now()) @map("opened_at")
-  closedBy            String?   @map("closed_by") @db.Uuid
-  closedAt            DateTime? @map("closed_at")
-  countedCashCents    Int?      @map("counted_cash_cents")
-  countedPixCents     Int?      @map("counted_pix_cents")
-  countedDebitCents   Int?      @map("counted_debit_cents")
-  countedCreditCents  Int?      @map("counted_credit_cents")
-  // "Fotografia" do cálculo no momento do fechamento — o histórico não muda depois.
-  expectedCashCents   Int?      @map("expected_cash_cents")
-  salesTotalCents     Int?      @map("sales_total_cents")
-  salesCount          Int?      @map("sales_count")
-  summary             Json?
-  notes               String?
+// Caixa do dia (migration 20261116120000_simple_daily_cash): uma "fotografia" por loja + dia,
+// gravada quando alguém fecha o caixa. As vendas do dia são calculadas pela data da venda.
+model CashClosing {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  storeId         String   @map("store_id") @db.Uuid
+  store           Store    @relation(fields: [storeId], references: [id])
+  businessDate    DateTime @map("business_date") @db.Date
+  salesCount      Int      @map("sales_count")
+  salesTotalCents Int      @map("sales_total_cents")
+  costTotalCents  Int      @map("cost_total_cents")
+  byMethod        Json     @map("by_method")
+  notes           String?
+  closedBy        String   @map("closed_by") @db.Uuid
+  closedAt        DateTime @default(now()) @map("closed_at")
 
-  movements CashMovement[]
-
-  @@index([tenantId, storeId, openedAt], map: "cash_sessions_tenant_store_opened_idx")
-  @@map("cash_sessions")
-}
-
-model CashMovement {
-  id             String      @id @default(uuid()) @db.Uuid
-  tenantId       String      @map("tenant_id") @db.Uuid
-  cashSessionId  String      @map("cash_session_id") @db.Uuid
-  cashSession    CashSession @relation(fields: [cashSessionId], references: [id])
-  type           String // "sangria" | "suprimento"
-  amountCents    Int         @map("amount_cents")
-  reason         String
-  createdBy      String      @map("created_by") @db.Uuid
-  createdAt      DateTime    @default(now()) @map("created_at")
-
-  @@index([cashSessionId], map: "cash_movements_session_idx")
-  @@map("cash_movements")
+  @@unique([tenantId, storeId, businessDate], map: "cash_closings_tenant_store_date_key")
+  @@map("cash_closings")
 }

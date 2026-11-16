@@ -1,133 +1,79 @@
 import { api, buildQuery } from "./client";
-import type { SummaryMethodKeyClient } from "./cash-types";
-export type { SummaryMethodKeyClient } from "./cash-types";
+import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS, type PaymentMethod } from "@/lib/payment-methods";
 
-export interface CashMovement {
-  id: string;
-  type: "sangria" | "suprimento";
-  amountCents: number;
-  reason: string;
-  createdBy: string;
-  createdByName: string | null;
-  createdAt: string;
-}
+export type CashMethodKey = PaymentMethod | "nao_informado";
+export type CashByMethod = Record<CashMethodKey, number>;
 
-export interface CashSummary {
-  openingAmountCents: number;
-  salesCount: number;
-  salesTotalCents: number;
-  byMethod: Record<SummaryMethodKeyClient, { count: number; totalCents: number }>;
-  suprimentosCents: number;
-  sangriasCents: number;
-  expectedCashCents: number;
-  expectedPixCents: number;
-  expectedDebitCents: number;
-  expectedCreditCents: number;
-}
+/** Ordem e rótulos das formas de pagamento nas telas de caixa. */
+export const CASH_METHODS: { key: CashMethodKey; label: string }[] = [
+  ...PAYMENT_METHODS.map((key) => ({ key, label: PAYMENT_METHOD_LABELS[key] })),
+  { key: "nao_informado", label: "Não informado" },
+];
 
-export interface CashDifferences {
-  cash: number | null;
-  pix: number | null;
-  debit: number | null;
-  credit: number | null;
-  total: number | null;
-}
-
-export interface CashSale {
+export interface DayCashSale {
   id: string;
   createdAt: string;
   totalAmountCents: number;
-  paymentMethod: string | null;
-  paymentMethodLabel: string | null;
-  sellerId: string;
+  paymentMethod: CashMethodKey;
   sellerName: string | null;
 }
 
-export interface CashSession {
-  id: string;
+export interface DayCash {
   storeId: string;
   storeName: string;
-  status: "open" | "closed";
-  openingAmountCents: number;
-  openedBy: string;
-  openedByName: string | null;
-  openedAt: string;
-  closedBy: string | null;
-  closedByName: string | null;
-  closedAt: string | null;
-  countedCashCents: number | null;
-  countedPixCents: number | null;
-  countedDebitCents: number | null;
-  countedCreditCents: number | null;
-  notes: string | null;
-  movements: CashMovement[];
-  financial: boolean;
-  summary?: CashSummary;
-  differences?: CashDifferences | null;
-  sales?: CashSale[];
-}
-
-export interface OpenCashSessionItem {
-  id: string;
-  storeId: string;
-  storeName: string;
-  openingAmountCents: number;
-  openedByName: string | null;
-  openedAt: string;
-  movementCount: number;
-}
-
-export interface ClosedCashSessionItem {
-  id: string;
-  storeId: string;
-  storeName: string;
-  openedAt: string;
-  openedByName: string | null;
-  closedAt: string | null;
-  closedByName: string | null;
+  date: string;
+  isToday: boolean;
   salesCount: number;
   salesTotalCents: number;
-  expectedCashCents: number | null;
-  countedCashCents: number | null;
-  cashDifferenceCents: number | null;
-  totalDifferenceCents: number | null;
+  byMethod: CashByMethod;
+  /** null = sem acesso financeiro (vendedor sem a senha do gestor). */
+  costTotalCents: number | null;
+  profitCents: number | null;
+  sales: DayCashSale[];
+  closing: {
+    closedAt: string;
+    closedByName: string | null;
+    notes: string | null;
+    salesCount: number;
+    salesTotalCents: number;
+  } | null;
+  changedAfterClosing: boolean;
 }
 
-export interface TodayCashStatus {
+export interface PendingCashDay {
   storeId: string;
   storeName: string;
-  status: "open" | "closed" | "none";
-  sessionId: string | null;
-  openedAt: string | null;
-  closedAt: string | null;
-  cashDifferenceCents: number | null;
-  totalDifferenceCents: number | null;
+  date: string;
+  salesCount: number;
+  salesTotalCents: number;
+  changedAfterClosing: boolean;
+}
+
+export interface CashClosingItem {
+  id: string;
+  storeId: string;
+  storeName: string;
+  date: string;
+  salesCount: number;
+  salesTotalCents: number;
+  byMethod: CashByMethod;
+  costTotalCents: number | null;
+  profitCents: number | null;
+  closedAt: string;
+  closedByName: string | null;
+  notes: string | null;
 }
 
 export const cashApi = {
-  listOpen: (storeId?: string) => api.get<OpenCashSessionItem[]>(`/api/cash-sessions${buildQuery({ storeId })}`),
-  open: (storeId: string, openingAmountCents: number) =>
-    api.post<CashSession>("/api/cash-sessions", { storeId, openingAmountCents }),
-  get: (sessionId: string) => api.get<CashSession>(`/api/cash-sessions/${sessionId}`),
-  addMovement: (sessionId: string, input: { type: "sangria" | "suprimento"; amountCents: number; reason: string }) =>
-    api.post<CashMovement>(`/api/cash-sessions/${sessionId}/movements`, input),
-  close: (
-    sessionId: string,
-    input: { countedCashCents: number; countedPixCents?: number; countedDebitCents?: number; countedCreditCents?: number; notes?: string },
-  ) => api.post<CashSession>(`/api/cash-sessions/${sessionId}/close`, input),
-  history: (params: { storeId?: string | undefined; from?: string | undefined; to?: string | undefined; cursor?: string | undefined; limit?: number } = {}) =>
-    api.get<{ items: ClosedCashSessionItem[]; page: { next_cursor: string | null; has_more: boolean } }>(
-      `/api/cash-sessions/history${buildQuery(params)}`,
-    ),
-  today: (storeId?: string) => api.get<TodayCashStatus[]>(`/api/cash-sessions/today${buildQuery({ storeId })}`),
+  day: (storeId: string, date?: string) => api.get<DayCash>(`/api/cash/day${buildQuery({ storeId, date })}`),
+  close: (input: { storeId: string; date: string; notes?: string }) => api.post<DayCash>("/api/cash/day/close", input),
+  pending: (storeId?: string) => api.get<PendingCashDay[]>(`/api/cash/pending${buildQuery({ storeId })}`),
+  closings: (params: { storeId?: string | undefined; limit?: number } = {}) =>
+    api.get<CashClosingItem[]>(`/api/cash/closings${buildQuery(params)}`),
 };
 
-/** "150,50" / "150.50" / "1.234,56" -> centavos. Vazio ou inválido -> null. */
-export function parseMoneyToCents(value: string): number | null {
-  const raw = value.trim().replace(/\s|R\$/g, "");
-  if (!raw) return null;
-  const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw;
-  const num = Number(normalized);
-  if (!Number.isFinite(num) || num < 0) return null;
-  return Math.round(num * 100);
+/** "2026-11-15" -> "15/11/2026" (sem passar por Date, para não trocar o dia por causa do fuso). */
+export function formatCashDate(date: string): string {
+  const [y, m, d] = date.split("-");
+  return `${d}/${m}/${y}`;
 }

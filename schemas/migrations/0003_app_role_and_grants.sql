@@ -69,7 +69,7 @@ REVOKE UPDATE, DELETE ON audit_log FROM app_user;
 -- Sequences/defaults: gen_random_uuid() não requer privilégio de sequence (pgcrypto function,
 -- não serial) — nenhum GRANT adicional necessário para os defaults de PK deste schema.
 
--- Caixa (libs/shared/prisma/migrations/20261109130000_cash_register): a própria migration Prisma
+-- Caixa do dia (libs/shared/prisma/migrations/20261116120000_simple_daily_cash): a própria migration Prisma
 -- já concede estes privilégios quando o app_user existe. Este bloco cobre a instalação do zero,
 -- em que `prisma migrate deploy` roda antes do app_user ser criado aqui. Condicional porque o
 -- harness de testes aplica este arquivo antes das migrations Prisma (tabelas ainda inexistentes).
@@ -77,7 +77,7 @@ DO $$
 DECLARE
     t text;
 BEGIN
-    FOR t IN SELECT unnest(ARRAY['cash_sessions','cash_movements'])
+    FOR t IN SELECT unnest(ARRAY['cash_closings'])
     LOOP
         IF to_regclass(format('public.%I', t)) IS NOT NULL THEN
             EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO app_user', t);

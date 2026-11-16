@@ -4,16 +4,15 @@ export { createSale, listSales, getSale, type SaleInput, type SaleItemInput, typ
 export { listCustomers, createCustomer, getCustomerHistory, type CustomerInput, type ListCustomersFilters } from "./customers";
 export { getAbcCurve, getStockTurnover, getStalledProducts, getBestSellers, getMonthlySalesSummary, getRevenueSummary, type DashboardDateFilter } from "./dashboard";
 export {
-  openCashSession,
-  addCashMovement,
-  closeCashSession,
-  getCashSession,
-  listOpenCashSessions,
-  listClosedCashSessions,
-  getTodayCashStatus,
-  toCashSessionView,
-  type CashSessionDetail,
-  type CashSessionView,
-  type CashMovementType,
-} from "./cash-register";
-export { computeCashSummary, computeCashDifferences, type CashSummary, type CashDifferences } from "./cash-summary";
+  getDayCash,
+  closeDayCash,
+  listPendingCashDays,
+  listCashClosings,
+  hideCost,
+  todayInCashTimezone,
+  type DayCash,
+  type PendingCashDay,
+  type CashClosingListItem,
+  type CashByMethod,
+  type CashMethodKey,
+} from "./daily-cash";

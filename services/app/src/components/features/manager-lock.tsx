@@ -29,6 +29,7 @@ function useRefreshAfterAccessChange() {
     await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     await queryClient.invalidateQueries({ queryKey: ["sales"] });
     await queryClient.invalidateQueries({ queryKey: ["monthly-sales"] });
+    await queryClient.invalidateQueries({ queryKey: ["cash"] });
   };
 }
 

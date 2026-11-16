@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, UserPlus } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +45,7 @@ function newRow(): SaleRow {
 
 export default function NewSalePage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { notify } = useToast();
   const storesQuery = useQuery({ queryKey: ["stores"], queryFn: () => tenantsApi.listStores({ limit: 100 }) });
   const customersQuery = useQuery({ queryKey: ["customers", "picker"], queryFn: () => salesApi.listCustomers({ limit: 100 }) });
@@ -77,6 +78,10 @@ export default function NewSalePage() {
       setError("Selecione a loja onde a venda está sendo feita.");
       return;
     }
+    if (!paymentMethod) {
+      setError("Escolha a forma de pagamento (dinheiro, Pix, cartão...). Ela vai para o caixa do dia.");
+      return;
+    }
     if (!saleDate) {
       setError("Informe a data da venda.");
       return;
@@ -96,7 +101,7 @@ export default function NewSalePage() {
       const sale = await salesApi.createSale({
         storeId,
         ...(customerId ? { customerId } : {}),
-        ...(paymentMethod ? { paymentMethod } : {}),
+        paymentMethod,
         saleDate,
         items: items.map((r) => ({
           productId: r.product!.id,
@@ -105,7 +110,8 @@ export default function NewSalePage() {
           ...(r.batchId ? { batchId: r.batchId } : {}),
         })),
       });
-      notify({ title: "Venda registrada", variant: "success" });
+      notify({ title: "Venda registrada", description: "Já entrou no caixa do dia.", variant: "success" });
+      void queryClient.invalidateQueries({ queryKey: ["cash"] });
       router.push(`/vendas/${sale.saleId}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -185,7 +191,7 @@ export default function NewSalePage() {
                     onChange={(e) => setSaleDate(e.target.value)}
                   />
                 </Field>
-                <Field label="Forma de pagamento" htmlFor="paymentMethod" hint="Usada no fechamento do caixa">
+                <Field label="Forma de pagamento" htmlFor="paymentMethod" hint="Obrigatório — entra no caixa do dia">
                   <Select
                     id="paymentMethod"
                     value={paymentMethod || undefined}
