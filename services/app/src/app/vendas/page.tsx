@@ -20,6 +20,7 @@ import { dashboardApi } from "@/lib/api/dashboard";
 import { MonthlySalesChart } from "@/components/features/monthly-sales-chart";
 import { ManagerGate, ManagerUnlockedBar, useManagerAccess } from "@/components/features/manager-lock";
 import { formatCentsToBRL, formatDateTimeBR } from "@/lib/format";
+import { DeleteSaleButton } from "@/components/features/delete-sale-button";
 
 export default function SalesPage() {
   const [storeId, setStoreId] = useState<string | undefined>(undefined);
@@ -127,6 +128,7 @@ export default function SalesPage() {
                     <TableHead>Itens</TableHead>
                     <TableHead>Total</TableHead>
                     <TableHead>Situação</TableHead>
+                    <TableHead className="w-12"><span className="sr-only">Apagar</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -141,8 +143,11 @@ export default function SalesPage() {
                       <TableCell>{formatCentsToBRL(sale.totalAmountCents)}</TableCell>
                       <TableCell>
                         <Badge variant={sale.status === "completed" ? "success" : "neutral"}>
-                          {sale.status === "completed" ? "Concluída" : "Cancelada"}
+                          {sale.status === "completed" ? "Concluída" : "Apagada"}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {sale.status === "completed" && <DeleteSaleButton saleId={sale.id} totalCents={sale.totalAmountCents} compact />}
                       </TableCell>
                     </TableRow>
                   ))}

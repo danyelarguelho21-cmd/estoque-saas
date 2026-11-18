@@ -122,6 +122,8 @@ function DashboardContent() {
           <p className="ml-auto text-xs text-[var(--color-muted)]">Vale para faturamento, mais vendidos e curva ABC.</p>
         </div>
 
+        <CashTodayCard storeId={storeId} />
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           <StatCard
             label="Mais vendido"
@@ -159,8 +161,6 @@ function DashboardContent() {
             hint="Dentro da janela configurada"
           />
         </div>
-
-        <CashTodayCard storeId={storeId} />
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card>

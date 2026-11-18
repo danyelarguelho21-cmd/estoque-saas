@@ -12,6 +12,7 @@ import { PageSpinner } from "@/components/ui/spinner";
 import { EmptyState } from "@/components/ui/empty-state";
 import { salesApi } from "@/lib/api/sales";
 import { formatCentsToBRL, formatDateTimeBR } from "@/lib/format";
+import { DeleteSaleButton } from "@/components/features/delete-sale-button";
 
 export default function SaleDetailPage({ params }: { params: Promise<{ saleId: string }> }) {
   const { saleId } = use(params);
@@ -44,7 +45,7 @@ export default function SaleDetailPage({ params }: { params: Promise<{ saleId: s
             <p className="text-sm text-[var(--color-muted)]">{formatDateTimeBR(sale.createdAt)}</p>
           </div>
           <Badge variant={sale.status === "completed" ? "success" : "neutral"}>
-            {sale.status === "completed" ? "Concluída" : "Cancelada"}
+            {sale.status === "completed" ? "Concluída" : "Apagada"}
           </Badge>
         </div>
 
@@ -82,11 +83,18 @@ export default function SaleDetailPage({ params }: { params: Promise<{ saleId: s
           </CardContent>
         </Card>
 
-        {sale.customerId && (
-          <Button asChild variant="outline">
-            <Link href={`/vendas/clientes/${sale.customerId}`}>Ver histórico do cliente</Link>
-          </Button>
+        {sale.status !== "completed" && (
+          <p className="text-sm text-[var(--color-muted)]">Esta venda foi apagada: não conta no caixa nem nos relatórios, e os produtos voltaram para o estoque.</p>
         )}
+
+        <div className="flex flex-wrap gap-2">
+          {sale.customerId && (
+            <Button asChild variant="outline">
+              <Link href={`/vendas/clientes/${sale.customerId}`}>Ver histórico do cliente</Link>
+            </Button>
+          )}
+          {sale.status === "completed" && <DeleteSaleButton saleId={sale.id} totalCents={sale.totalAmountCents} />}
+        </div>
       </div>
     </AppShell>
   );

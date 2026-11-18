@@ -1,4 +1,4 @@
-import { ValidationError, recordAudit, withTenant } from "@estoque-saas/shared";
+import { NotFoundError, ValidationError, recordAudit, withTenant } from "@estoque-saas/shared";
 import { getCurrentStock, lockStockRow, resolveExitLines } from "@/modules/stock";
 import type { PaymentMethod } from "@/lib/payment-methods";
 
@@ -178,4 +178,50 @@ export async function listSales(tenantId: string, filters: ListSalesFilters) {
 
 export async function getSale(tenantId: string, saleId: string) {
   return withTenant(tenantId, (tx) => tx.sale.findUnique({ where: { id: saleId }, include: { items: true } }));
+}
+
+// Apagar venda (lançada errado ou de teste). Não some do banco: vira status "canceled" (sai de
+// listas, caixa do dia e relatórios, que só contam "completed") e os produtos VOLTAM para o
+// estoque com um movimento "ajuste" ligado à venda — tudo numa transação.
+export async function deleteSale(tenantId: string, userId: string, saleId: string): Promise<void> {
+  return withTenant(tenantId, async (tx) => {
+    const sale = await tx.sale.findUnique({ where: { id: saleId }, include: { items: true } });
+    if (!sale) throw new NotFoundError("Venda não encontrada.");
+    if (sale.status !== "completed") throw new ValidationError("Esta venda já foi apagada.");
+
+    // Trava a venda: duas pessoas clicando em "apagar" ao mesmo tempo não devolvem o estoque duas vezes.
+    const updated = await tx.sale.updateMany({ where: { id: saleId, status: "completed" }, data: { status: "canceled" } });
+    if (updated.count === 0) throw new ValidationError("Esta venda já foi apagada.");
+
+    for (const item of sale.items) {
+      await lockStockRow(tx, tenantId, item.productId, sale.storeId);
+      const balanceAfter = (await getCurrentStock(tx, item.productId, sale.storeId)) + item.quantity;
+      await tx.stockMovement.create({
+        data: {
+          tenantId,
+          productId: item.productId,
+          storeId: sale.storeId,
+          batchId: item.batchId,
+          type: "ajuste",
+          quantity: item.quantity,
+          referenceId: sale.id,
+          createdBy: userId,
+          balanceAfter,
+          metadata: { reason: "venda_apagada", saleId: sale.id },
+        },
+      });
+      if (item.batchId) {
+        await tx.batch.update({ where: { id: item.batchId }, data: { quantity: { increment: item.quantity } } });
+      }
+    }
+
+    await recordAudit(tx, {
+      tenantId,
+      userId,
+      entityType: "sale",
+      entityId: sale.id,
+      action: "delete",
+      before: { storeId: sale.storeId, totalAmountCents: sale.totalAmountCents, itemCount: sale.items.length, createdAt: sale.createdAt.toISOString() },
+    });
+  });
 }

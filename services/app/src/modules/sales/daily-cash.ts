@@ -7,8 +7,8 @@
 // Dia pendente = dia anterior a hoje que teve venda e não foi fechado — ou que foi fechado, mas
 // depois recebeu venda (ex.: venda lançada com data passada). O sistema avisa até alguém fechar.
 //
-// Lucro do dia = total vendido − custo (quantidade × preço de custo atual do produto). Quem não
-// tem acesso financeiro (vendedor sem a senha do gestor) não recebe custo/lucro — ver a rota.
+// Lucro do dia = total vendido − custo (quantidade × preço de custo atual do produto). Vendedor
+// nunca recebe custo/lucro (nem com a senha do gestor) — ver as rotas.
 import { Prisma } from "@prisma/client";
 import { NotFoundError, ValidationError, recordAudit, withTenant, type TenantScopedClient } from "@estoque-saas/shared";
 import { PAYMENT_METHODS, isPaymentMethod, type PaymentMethod } from "@/lib/payment-methods";

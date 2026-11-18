@@ -13,6 +13,7 @@ export const salesApi = {
   ) => api.get<Paginated<Sale> & { totalAmountCents: number; ownOnly?: boolean }>(`/api/sales${buildQuery(params)}`),
   createSale: (input: SaleInput) => api.post<CreateSaleResult>("/api/sales", input),
   getSale: (saleId: string) => api.get<Sale>(`/api/sales/${saleId}`),
+  deleteSale: (saleId: string) => api.delete<void>(`/api/sales/${saleId}`),
 
   listCustomers: (params: { cursor?: string | undefined; limit?: number | undefined; search?: string | undefined } = {}) =>
     api.get<Paginated<Customer>>(`/api/customers${buildQuery(params)}`),

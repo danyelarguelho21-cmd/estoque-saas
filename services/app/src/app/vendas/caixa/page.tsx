@@ -20,7 +20,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/components/ui/toast";
 import { RoleGate } from "@/components/features/role-gate";
 import { StatCard } from "@/components/features/stat-card";
-import { ManagerUnlockForm, ManagerUnlockedBar, useManagerAccess } from "@/components/features/manager-lock";
+import { ManagerUnlockedBar } from "@/components/features/manager-lock";
+import { DeleteSaleButton } from "@/components/features/delete-sale-button";
 import { MethodTotals } from "@/components/features/cash/cash-shared";
 import { cashApi, formatCashDate, CASH_METHODS, type DayCash } from "@/lib/api/cash";
 import { tenantsApi } from "@/lib/api/tenants";
@@ -105,7 +106,7 @@ function PendingDays({ onOpen, current }: { onOpen: (storeId: string, date: stri
             <span>
               <b>{formatCashDate(p.date)}</b>
               {p.storeName && ` · ${p.storeName}`} — {p.salesCount} venda(s), {formatCentsToBRL(p.salesTotalCents)}
-              {p.changedAfterClosing && " (entrou venda depois do fechamento)"}
+              {p.changedAfterClosing && " (as vendas mudaram depois do fechamento)"}
             </span>
             <Button size="sm" onClick={() => onOpen(p.storeId, p.date)}>
               Fechar esse caixa
@@ -150,7 +151,7 @@ function DayCashPanel({ storeId, date, onChangeDate }: { storeId: string; date: 
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className={`grid grid-cols-1 gap-4 ${day.profitCents === null ? "sm:grid-cols-1" : "sm:grid-cols-3"}`}>
         <StatCard label="Total vendido" value={formatCentsToBRL(day.salesTotalCents)} icon={Receipt} hint={`${day.salesCount} venda(s)`} />
         <ProfitCards day={day} />
       </div>
@@ -181,6 +182,7 @@ function DayCashPanel({ storeId, date, onChangeDate }: { storeId: string; date: 
                   <TableHead>Valor</TableHead>
                   <TableHead>Pagamento</TableHead>
                   <TableHead>Vendedor</TableHead>
+                  <TableHead className="w-12"><span className="sr-only">Apagar</span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -194,6 +196,9 @@ function DayCashPanel({ storeId, date, onChangeDate }: { storeId: string; date: 
                     <TableCell>{formatCentsToBRL(s.totalAmountCents)}</TableCell>
                     <TableCell>{CASH_METHODS.find((m) => m.key === s.paymentMethod)?.label ?? "Não informado"}</TableCell>
                     <TableCell>{s.sellerName ?? "—"}</TableCell>
+                    <TableCell>
+                      <DeleteSaleButton saleId={s.id} totalCents={s.totalAmountCents} compact />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -205,21 +210,9 @@ function DayCashPanel({ storeId, date, onChangeDate }: { storeId: string; date: 
   );
 }
 
-/** Custo e lucro: admin/operador veem direto; vendedor precisa da senha do gestor. */
+/** Custo e lucro: só admin/operador (a API não manda esses valores para o vendedor). */
 function ProfitCards({ day }: { day: DayCash }) {
-  const { allowed, isLoading } = useManagerAccess();
-  if (isLoading) return <PageSpinner />;
-  if (!allowed || day.profitCents === null) {
-    return (
-      <Card className="sm:col-span-2">
-        <CardContent className="flex flex-col gap-2 pt-6">
-          <p className="text-sm font-medium text-slate-900">Custo e lucro do dia</p>
-          <p className="text-xs text-[var(--color-muted)]">Só o gerente vê. Digite a senha do gestor para mostrar.</p>
-          <ManagerUnlockForm compact />
-        </CardContent>
-      </Card>
-    );
-  }
+  if (day.profitCents === null) return null;
   return (
     <>
       <StatCard label="Custo dos produtos" value={formatCentsToBRL(day.costTotalCents ?? 0)} icon={Coins} hint="Pelo preço de custo cadastrado" />
@@ -264,7 +257,7 @@ function CloseDayCard({ day }: { day: DayCash }) {
       <Alert variant="success" title="Caixa fechado">
         Fechado em {formatDateTimeBR(day.closing.closedAt)}
         {day.closing.closedByName && ` por ${day.closing.closedByName}`}.{day.closing.notes && ` Observação: ${day.closing.notes}`}
-        {day.isToday && " Se vender mais hoje, a venda entra aqui e o sistema pede para fechar de novo."}
+        {day.isToday && " Se vender mais hoje (ou apagar uma venda), o sistema pede para fechar de novo."}
       </Alert>
     );
   }
@@ -273,7 +266,7 @@ function CloseDayCard({ day }: { day: DayCash }) {
     <Card>
       <CardContent className="flex flex-col gap-4 pt-6">
         {day.closing && day.changedAfterClosing && (
-          <Alert variant="warning" title="Entrou venda depois do fechamento">
+          <Alert variant="warning" title="As vendas mudaram depois do fechamento">
             O caixa foi fechado com {day.closing.salesCount} venda(s) ({formatCentsToBRL(day.closing.salesTotalCents)}), mas agora tem {day.salesCount} (
             {formatCentsToBRL(day.salesTotalCents)}). Feche de novo para atualizar.
           </Alert>

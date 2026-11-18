@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { hasFinancialAccess, requireRole } from "@/modules/auth";
+import { requireRole, roleHasFinancialAccess } from "@/modules/auth";
 import { closeDayCash, hideCost } from "@/modules/sales";
 import { handleRoute, ok, parseJsonBody } from "@/lib/http";
 
@@ -16,6 +16,6 @@ export async function POST(req: Request): Promise<Response> {
     const ctx = await requireRole("sales:write");
     const input = await parseJsonBody(req, CloseSchema);
     const day = await closeDayCash(ctx.tenantId, ctx.userId, input);
-    return ok(hideCost(day, await hasFinancialAccess(ctx)));
+    return ok(hideCost(day, roleHasFinancialAccess(ctx.role)));
   });
 }
