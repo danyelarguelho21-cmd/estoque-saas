@@ -69,6 +69,9 @@ test("finishing a sale redirects to the REAL sale's detail page, not /vendas/und
   await page.getByPlaceholder("Buscar produto por nome, SKU ou código de barras").fill("Produto para Venda");
   await page.getByRole("option", { name: /Produto para Venda/ }).click();
   await page.getByLabel("Preço unit. (R$)").fill("29.90");
+  // Forma de pagamento é obrigatória desde o caixa do dia (a venda entra no caixa por forma).
+  await page.getByLabel("Forma de pagamento").click();
+  await page.getByRole("option", { name: "Dinheiro" }).click();
   await page.getByRole("button", { name: "Finalizar venda" }).click();
 
   // THE bug: this used to be /vendas/undefined with an EmptyState("Venda não encontrada").
