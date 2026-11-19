@@ -56,6 +56,7 @@ MIGRATION_FILES.push(
   path.join(REPO_ROOT, "libs/shared/prisma/migrations/20261109120000_basic_plan_seven_users/migration.sql"),
   path.join(REPO_ROOT, "libs/shared/prisma/migrations/20261109130000_cash_register/migration.sql"),
   path.join(REPO_ROOT, "libs/shared/prisma/migrations/20261116120000_simple_daily_cash/migration.sql"),
+  path.join(REPO_ROOT, "libs/shared/prisma/migrations/20261119120000_all_plans_ten_users/migration.sql"),
 );
 
 // GUARD (root-cause fix, found via manual e2e testing): this module's seed helpers

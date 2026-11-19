@@ -137,7 +137,7 @@ const PLANS: { name: string; tagline: string; priceCents: number; items: string[
     name: "Básico",
     tagline: "Pra quem tem uma loja e quer sair da planilha.",
     priceCents: 14990,
-    items: ["Até 100 produtos diferentes", "7 usuários", "1 loja", "Controle de validade/lote (FEFO)", "Importação por CSV", "Importação de NF-e do fornecedor"],
+    items: ["Até 100 produtos diferentes", "10 usuários", "1 loja", "Controle de validade/lote (FEFO)", "Importação por CSV", "Importação de NF-e do fornecedor"],
   },
   {
     name: "Pro",
@@ -150,7 +150,7 @@ const PLANS: { name: string; tagline: string; priceCents: number; items: string[
     name: "Enterprise",
     tagline: "Pra operação maior, com times e várias lojas.",
     priceCents: 35000,
-    items: ["Até 1.000 produtos diferentes", "20 usuários", "5 lojas", "Tudo do Pro", "Suporte prioritário"],
+    items: ["Até 1.000 produtos diferentes", "10 usuários", "5 lojas", "Tudo do Pro", "Suporte prioritário"],
   },
 ];
 
@@ -341,7 +341,7 @@ export function LandingPage() {
           <span className="eyebrow center" style={{ marginTop: 64 }}>Números do próprio sistema</span>
           <div className="stat-grid">
             <StatCell delay={1} target={1000} label="Produtos suportados (Enterprise)" fill={100} />
-            <StatCell delay={2} target={20} label="Usuários simultâneos" fill={80} />
+            <StatCell delay={2} target={10} label="Usuários simultâneos" fill={80} />
             <StatCell delay={3} target={5} label="Lojas por empresa" fill={60} />
             <StatCell delay={4} target={100} suffix="%" label="Isolamento entre empresas (RLS)" fill={100} />
           </div>
